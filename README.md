@@ -184,4 +184,135 @@ Code
 - Implemented full validation + error handling system  
 - Understood Python execution flow  
 - Learned professional tooling workflow  
-- Successfully shipped project to GitHub with tests  
+- Successfully shipped project to GitHub with tests
+
+---
+
+# 📘 Day 2 — Conditionals, Loops & Control Flow Systems (Number Guessing Game)
+
+---
+
+## 🧠 Focus
+
+Build a CLI number guessing game while learning core **production control flow patterns**: conditionals, loops, validation boundaries, and safe termination logic.
+
+---
+
+## 📚 Key Concepts
+
+- Conditional routing (`if / elif / else`)
+- Loop patterns:
+  - `while True + break`
+  - bounded loops (`while condition`)
+- Input validation vs business logic separation
+- Pure logic vs IO separation (`game.py` vs `main.py`)
+- Safe input handling with `try / except`
+- Max iteration / termination guards
+- Python import system (`PYTHONPATH=src`)
+- Unit testing with pytest
+- `src/` based project structure
+
+---
+
+## 🧱 Build
+
+### 🎯 Number Guessing Game (CLI System)
+
+- Random secret number within user-defined range  
+- Safe range validation (`lower < upper`)  
+- Input-safe guessing (no crashes)  
+- Feedback signals:
+  - `"too_high"`
+  - `"too_low"`
+  - `"correct"`
+- Attempt counter tracking  
+- Replay loop system  
+- Fully modular structure (logic vs IO separation)
+
+---
+
+## 🧩 Structure
+
+src/
+└── guessing_game/
+├── game.py → pure logic
+├── main.py → IO + control flow
+
+tests/
+└── test_checkguess.py
+
+---
+
+## 🔧 Core Functions
+
+### game.py
+- `generate_secret_number(lower, upper)` → random number generator  
+- `check_guess(guess, secret)` → returns comparison signal  
+- `is_valid_range(lower, upper)` → validates range rule  
+
+### main.py
+- `get_range()` → safe range input loop  
+- `get_guess()` → safe validated input loop  
+- `play_game()` → main game loop with attempts + exit logic  
+- `main()` → replay controller  
+
+---
+
+## 🧪 Testing
+
+- Unit tests using :contentReference[oaicite:0]{index=0}  
+- Tested `check_guess()`:
+  - too high
+  - too low
+  - correct  
+- All tests passed
+
+---
+
+## 🛠️ Tools Used
+
+- ruff → code quality checks  
+- black → formatting  
+- pytest → unit testing  
+- Git + GitHub → version control  
+- PYTHONPATH → import resolution  
+
+---
+
+## 🔁 Workflow Learned
+
+Code → Test → Lint → Format → Commit → Push
+
+---
+
+## ⚠️ Key Learnings
+
+- Loops must always have termination conditions or safety limits  
+- Input validation must be separate from business logic  
+- Pure functions should not handle IO  
+- `input()` always returns string → must be validated  
+- Python imports depend on runtime config (`PYTHONPATH`)  
+- `src/` layout requires explicit import handling  
+- Infinite loops are production risks (APIs / agents)  
+
+---
+
+## 🚨 Engineering Insight
+
+Any loop interacting with external input must have a **hard exit condition** (max attempts or break rule).
+
+This directly maps to:
+- API retry systems  
+- LLM execution loops  
+- AI agent orchestration (Week 7 preview)  
+
+---
+
+## 🚀 Outcome
+
+- Built structured CLI guessing game  
+- Implemented safe input + validation loops  
+- Separated logic and IO layers (production pattern)  
+- Introduced unit testing for core logic  
+- Learned controlled loop design with termination guarantees  
+- Understood Python import system via `src` architecture  
