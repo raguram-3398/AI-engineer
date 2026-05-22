@@ -510,3 +510,201 @@ Understood how production systems isolate:
 - business logic
 - side effects
 - validation
+
+---
+
+# 📘 Day 4 — Lists, State Transformation & Todo CLI System
+
+---
+
+## 🧠 Focus
+
+Learn how to model real-world state using `list[str]` and build predictable state transformation functions through a fully typed Todo CLI system with strict separation between **pure logic (tasks.py)** and **IO orchestration (main.py)**.
+
+This introduces the core AI engineering concept of **collection-based state management**, used in:
+- chat history pipelines
+- retrieval systems
+- token trimming
+- agent memory systems
+
+---
+
+## 📚 Key Concepts
+
+- list[str] as application state
+- Indexing and slicing as transformation tools
+- Pure vs impure list operations
+- In-place mutation vs returning new state
+- Centralized validation via is_valid_index()
+- Guard clauses using ValueError
+- Separation of:
+  - business logic (tasks.py)
+  - IO + control flow (main.py)
+- CLI loop as state transition engine
+
+---
+
+## 🧱 Build
+
+Todo CLI system where all state is:
+
+    tasks: list[str]
+
+Every operation returns a NEW list instead of mutating state.
+
+Core behavior:
+- add tasks
+- remove tasks
+- complete tasks
+- validate indices
+- menu-driven CLI loop
+
+---
+
+## 🧩 Structure
+
+week-1/day-4/
+├── src/
+│   └── todo/
+│       ├── __init__.py
+│       ├── tasks.py
+│       └── main.py
+└── tests/
+    └── test_tasks.py
+
+---
+
+## 🔧 Core Functions
+
+### tasks.py (Pure Logic Layer)
+
+add_task(tasks, task) -> list[str]
+- returns tasks + [task]
+- does NOT mutate original list
+
+remove_task(tasks, index) -> list[str]
+- validates index
+- returns tasks[:index] + tasks[index+1:]
+- raises ValueError if invalid
+
+complete_task(tasks, index) -> list[str]
+- transforms task into "[DONE] task"
+- rebuilds list using slicing
+- returns new list
+
+get_task(tasks, index) -> str
+- returns single task safely
+- validates index first
+
+is_valid_index(tasks, index) -> bool
+- returns 0 <= index < len(tasks)
+- shared validation rule
+
+---
+
+### main.py (IO Layer)
+
+display_tasks(tasks)
+- prints indexed tasks
+- no logic
+
+get_menu_choice()
+- reads user input
+
+get_task_input()
+- reads task string
+
+get_index_input(tasks)
+- loops until valid index is entered
+- uses is_valid_index()
+
+main()
+- owns application state: tasks = []
+- runs menu loop:
+  1 view
+  2 add
+  3 complete
+  4 remove
+  5 quit
+- reassigns state after every operation
+
+---
+
+## 🧪 Testing
+
+pytest focuses ONLY on tasks.py
+
+Tests verify:
+- correct output
+- immutability
+- error handling
+- validation logic
+
+Example pattern:
+
+def test_add_task():
+    tasks = ["study"]
+
+    result = add_task(tasks, "exercise")
+
+    assert result == ["study", "exercise"]
+    assert tasks == ["study"]
+
+---
+
+## 🛠️ Tools Used
+
+- ruff → linting
+- black → formatting
+- pytest → testing
+- Git + GitHub → version control
+- PYTHONPATH=src → import resolution
+
+---
+
+## 🔁 Workflow
+
+Code → Ruff → Black → Pytest → Git Add → Commit → Push
+
+---
+
+## ⚠️ Key Learnings
+
+- Lists are application state
+- Slicing = safe transformation
+- append/remove mutate state (avoid in pure logic)
+- validation must be centralized
+- IO must never mix with logic
+- functions should return new state
+- CLI = state transition loop
+- guard clauses prevent invalid system states
+
+---
+
+## 🚨 Engineering Insight
+
+State pipeline:
+
+    input state → validate → transform → output state
+
+Maps directly to:
+- AI memory systems
+- chat history trimming
+- retrieval pipelines
+- agent execution loops
+
+Todo CLI = simplified state engine used in production systems.
+
+---
+
+## 🚀 Outcome
+
+Built a fully typed state-driven CLI system with:
+
+- immutable transformations
+- strict validation layer
+- clean IO separation
+- testable pure functions
+- production-style architecture
+
+---
