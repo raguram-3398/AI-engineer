@@ -316,3 +316,197 @@ This directly maps to:
 - Introduced unit testing for core logic  
 - Learned controlled loop design with termination guarantees  
 - Understood Python import system via `src` architecture  
+
+---
+
+# 📘 Day 3 — Functions, Scope & Pure Logic Systems (Tip Calculator)
+
+## 🧠 Focus
+
+Learn production-safe function design using pure functions, scope boundaries, type hints, docstrings, and clean IO separation by building a modular tip calculator system.
+
+---
+
+# 📚 Key Concepts
+
+- Function definition with `def`
+- `return` vs `print`
+- Function scope (local vs global)
+- Pure functions vs side effects
+- Type hints for function contracts
+- Docstrings as API-style guarantees
+- Guard clauses with `ValueError`
+- Function composition
+- Logic vs IO separation (`calculator.py` vs `main.py`)
+- Deterministic function behavior
+- Unit testing pure functions with `pytest`
+
+---
+
+# 🧱 Build
+
+## 💰 Tip Calculator (Pure Function System)
+
+Built a modular CLI tip calculator using production-style architecture:
+
+- Tip calculation
+- Total bill calculation
+- Bill splitting per person
+- Zero-division protection via `ValueError`
+- Fully separated logic and IO layers
+- Typed functions with docstrings
+- Unit-tested pure computation layer
+
+---
+
+# 🧩 Structure
+
+```text
+week-1/day-3/
+├── src/
+│   └── tip_calculator/
+│       ├── __init__.py
+│       ├── calculator.py
+│       └── main.py
+└── tests/
+    └── test_calculator.py
+```
+
+---
+
+# 🔧 Core Functions
+
+## calculator.py (Pure Logic Layer)
+
+### calculate_tip(bill_amount, tip_percentage)
+
+Returns calculated tip amount from bill and percentage.
+
+### calculate_total(bill_amount, tip_amount)
+
+Returns total bill amount including tip.
+
+### split_bill(total_amount, num_people)
+
+Returns per-person split amount.
+
+Raises:
+- ValueError if num_people <= 0
+
+---
+
+## main.py (IO + Program Flow Layer)
+
+### get_bill_amount()
+
+Gets and converts bill input from user.
+
+### get_tip_percentage()
+
+Gets and converts tip percentage input.
+
+### get_num_people()
+
+Gets and converts number of people input.
+
+### main()
+
+Controls application flow:
+
+- collects input
+- calls pure functions
+- handles errors
+- prints results
+
+---
+
+# 🧪 Testing
+
+Unit tests written using pytest.
+
+### Test coverage:
+
+- calculate_tip() happy path
+- calculate_total() happy path
+- split_bill() happy path
+- split_bill() raises ValueError on zero people
+
+All tests passed successfully.
+
+---
+
+# 🛠️ Tools Used
+
+- ruff → linting and code quality checks
+- black → automatic formatting
+- pytest → unit testing
+- Git + GitHub → version control
+- PYTHONPATH=src → import resolution
+
+---
+
+# 🔁 Workflow Learned
+
+Code  
+→ Ruff  
+→ Black  
+→ Pytest  
+→ Git Add  
+→ Commit  
+→ Push  
+
+---
+
+# ⚠️ Key Learnings
+
+- return gives reusable output; print() only displays output
+- Pure functions should not use input() or print()
+- Same input should always produce same output
+- Global state creates unpredictable behavior
+- Validation should live inside the function that owns the rule
+- Small pure functions compose better than large mixed functions
+- Docstrings describe function promises, not implementation details
+- Type hints improve reliability and readability
+- IO boundaries must stay isolated from business logic
+
+---
+
+# 🚨 Engineering Insight
+
+A production-safe function:
+
+- takes explicit input
+- operates only on local data
+- returns deterministic output
+- does not modify external state
+
+This directly maps to:
+
+- token counters
+- PII scrubbers
+- retry wrappers
+- cost calculators
+- AI preprocessing pipelines
+
+Pure functions are the foundation of testable AI systems.
+
+---
+
+# 🚀 Outcome
+
+Built first fully modular pure-function application.
+
+Implemented:
+
+- typed function contracts
+- scope-safe logic
+- guard clause validation
+- deterministic computation layer
+- clean IO separation
+- unit-tested pure functions
+
+Understood how production systems isolate:
+
+- business logic
+- side effects
+- validation
