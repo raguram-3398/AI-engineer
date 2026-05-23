@@ -708,3 +708,157 @@ Built a fully typed state-driven CLI system with:
 - production-style architecture
 
 ---
+
+📘 Day 5 — Dictionaries, Sets & Word Frequency System
+
+🧠 Focus  
+Learn how production systems model structured state using `dict[str, int]` and `set[str]`, and build a fully typed word frequency engine with clean separation between IO (main.py) and pure transformation logic (counter.py).  
+
+This is the first step into real AI-style data pipelines where raw text → structured state → aggregated insights.
+
+📚 Key Concepts  
+- dict[str, int] as structured state (key → value mapping)
+- .get() pattern for safe incremental updates
+- .items(), .values(), len(dict) as core inspection tools
+- set[str] for uniqueness tracking and deduplication
+- sorted() with key functions for ranking systems
+- tuple[str, int] as structured output pairs
+- pure functions vs IO orchestration boundaries
+- empty input as valid state (not error state)
+- deterministic transformation pipelines
+
+🧱 Build  
+Word Frequency Analysis System:
+
+Takes raw text input → cleans it → counts word occurrences → produces ranked insights.
+
+Core capabilities:
+- Normalize text (lowercase + punctuation removal)
+- Count word frequency safely using dict.get()
+- Handle empty input without failure
+- Extract top-N most frequent words
+- Compute total word count (sum of values)
+- Compute unique word count (dictionary keys)
+- Display structured CLI output
+
+This mirrors real AI pipelines:
+text → preprocessing → token aggregation → ranking → reporting
+
+🧩 Structure  
+week-1/day-5/
+├── src/
+│   └── word_counter/
+│       ├── __init__.py
+│       ├── counter.py   → pure transformation logic
+│       └── main.py      → IO + program orchestration
+└── tests/
+    └── test_counter.py
+
+🔧 Core Functions  
+
+counter.py (Pure Logic Layer)
+
+clean_text(text: str) -> str  
+- Lowercases input text  
+- Removes punctuation  
+- Returns normalized string  
+- Exists to ensure consistent token identity across pipeline stages  
+
+count_words(text: str) -> dict[str, int]  
+- Converts text → frequency map  
+- Uses dict.get(word, 0) + 1 for safe incremental counting  
+- Returns empty dict for empty input  
+- Core state aggregation function  
+
+get_top_words(counts: dict[str, int], n: int) -> list[tuple[str, int]]  
+- Converts dictionary → sorted ranking list  
+- Uses sorted(counts.items(), key=lambda x: x[1], reverse=True)  
+- Returns top-N frequency pairs  
+- Mirrors retrieval ranking systems (score → sort → slice)  
+
+get_unique_word_count(counts: dict[str, int]) -> int  
+- Returns number of distinct words using len(dict)  
+- Relies on dictionary key uniqueness property  
+
+get_total_word_count(counts: dict[str, int]) -> int  
+- Aggregates all frequency values using sum(counts.values())  
+- Represents total token volume in dataset  
+
+main.py (IO + Control Layer)
+
+get_text_input() -> str  
+- Reads raw user input  
+- No transformation or logic  
+
+display_results(counts: dict[str, int], top_n: int) -> None  
+- Handles all output formatting  
+- Calls pure functions for derived metrics  
+- Gracefully handles empty dictionary state  
+- Never mutates data  
+
+main() -> None  
+- Orchestrates full pipeline:
+  input → count → analyze → display  
+- Owns execution flow only  
+- No business logic inside  
+
+🧪 Testing  
+All tests target pure functions only (counter.py):
+
+- clean_text() correctly normalizes casing and punctuation
+- count_words() correctly aggregates frequencies
+- count_words() returns {} for empty input
+- get_top_words() returns correctly ordered ranking
+- get_total_word_count() and get_unique_word_count() return correct metrics
+
+Testing principle:
+pure functions = deterministic + fully testable
+
+🛠️ Tools Used  
+- ruff → linting and static checks  
+- black → formatting consistency  
+- pytest → unit testing pure logic  
+- Git + GitHub → version control and history tracking  
+- Python typing → dict[str, int], list[tuple[str, int]] contracts  
+
+🔁 Workflow  
+Code → Clean → Test → Lint → Format → Commit → Push  
+
+⚠️ Key Learnings  
+- dict.get() is the safe increment pattern for uncertain keys  
+- dict[key] is strict and assumes key existence  
+- sets enforce uniqueness and are ideal for deduplication logic  
+- .items() enables structured iteration over key-value pairs  
+- .values() enables aggregation without key dependency  
+- empty input must be treated as valid system state  
+- sorted() transforms unordered state into ranked output  
+- pure functions guarantee repeatable behavior across runs  
+- IO must never exist inside transformation logic  
+
+🚨 Engineering Insight  
+This system represents a full transformation pipeline:
+
+raw input → normalization → tokenization → aggregation → ranking → reporting  
+
+This is the same structural pattern used in:
+- embedding pipelines
+- retrieval ranking systems
+- log aggregation systems
+- cost tracking systems
+- dataset preprocessing layers
+
+Core principle:
+state must be transformed, not mutated unpredictably  
+
+🚀 Outcome  
+Built a production-style text analysis engine with:
+
+- fully typed dictionary-based state model  
+- safe incremental counting using .get() pattern  
+- deterministic ranking system using sorted()  
+- clean separation between IO and logic  
+- testable pure transformation functions  
+- structured CLI reporting layer  
+
+Foundation established for Week 6:
+multi-file data pipelines and structured JSON-style processing systems
