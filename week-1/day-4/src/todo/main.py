@@ -16,8 +16,12 @@ def get_menu_choice() -> str:
 
 
 def get_task_input() -> str:
-    """Returns the input task"""
-    return input("Enter task: ")
+    """Returns validated non-empty task input"""
+    while True:
+        task = input("Enter task: ").strip()
+        if task:
+            return task
+        print("Task cannot be empty.")
 
 
 def get_index_input(tasks: list[str]) -> int:
@@ -50,8 +54,11 @@ def main() -> None:
             task = get_task_input()
             tasks = add_task(tasks, task)
         elif choice == "3":
-            index = get_index_input(tasks)
-            tasks = complete_task(tasks, index)
+            try:
+                index = get_index_input(tasks)
+                tasks = complete_task(tasks, index)
+            except ValueError as error:
+                print(error)
         elif choice == "4":
             index = get_index_input(tasks)
             tasks = remove_task(tasks, index)
@@ -60,6 +67,7 @@ def main() -> None:
             break
         else:
             print("Invalid Choice")
+
 
 if __name__ == "__main__":
     main()
