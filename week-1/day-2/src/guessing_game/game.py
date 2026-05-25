@@ -1,5 +1,6 @@
 import random
 
+
 def is_valid_range(lower: int, upper: int) -> bool:
     """checks if lower is lower than upper"""
     return lower < upper

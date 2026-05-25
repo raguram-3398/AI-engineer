@@ -1,4 +1,5 @@
-from game import is_valid_range, generate_secret_number, check_guess
+from guessing_game.game import is_valid_range, generate_secret_number, check_guess
+
 
 def get_guess(lower: int, upper: int) -> int:
     """gets the guess from user and checks validity"""

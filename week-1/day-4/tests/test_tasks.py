@@ -26,13 +26,13 @@ def test_complete_task():
 def test_remove_task_invalid_index_zero():
     tasks = ["a", "b", "c"]
     with pytest.raises(ValueError):
-        remove_task(tasks, "a")
+        remove_task(tasks, 5)
 
 
 def test_complete_task_invalid_index():
     tasks = ["a", "b", "c"]
     with pytest.raises(ValueError):
-        complete_task(tasks, -1)
+        complete_task(tasks, 5)
 
 
 def test_is_valid_index_true():

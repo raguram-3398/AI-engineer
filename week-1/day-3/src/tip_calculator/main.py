@@ -1,19 +1,37 @@
-from calculator import calculate_tip, calculate_total, split_bill
+from tip_calculator.calculator import calculate_tip, calculate_total, split_bill
 
 
 def get_bill_amount() -> float:
-    """Gets the bill amount from user"""
-    return float(input("Enter the Bill amount: "))
+    while True:
+        try:
+            bill_amount = float(input("Enter bill amount: "))
+            if bill_amount <= 0:
+                raise ValueError("Number of people cannot be zero")
+            return bill_amount
+        except ValueError:
+            print("Enter valid numbers")
 
 
 def get_tip_percentage() -> float:
-    """Gets the Tip percentage from user"""
-    return float(input("Enter the Tip percentage: "))
+    while True:
+        try:
+            tip_percentage = float(input("Enter tip percentage: "))
+            if tip_percentage <= 0:
+                raise ValueError("Number of people cannot be zero")
+            return tip_percentage
+        except ValueError:
+            print("Enter valid numbers")
 
 
-def get_num_people() -> int:
-    """Gets the No of people to split the bill"""
-    return int(input("Enter No of people: "))
+def get_no_of_people() -> int:
+    while True:
+        try:
+            no_of_people = int(input("Enter number of people: "))
+            if no_of_people <= 0:
+                raise ValueError("Number of people cannot be zero")
+            return no_of_people
+        except ValueError:
+            print("Enter valid numbers")
 
 
 def main() -> None:
@@ -21,7 +39,7 @@ def main() -> None:
         try:
             bill = get_bill_amount()
             tip_percentage = get_tip_percentage()
-            people = get_num_people()
+            people = get_no_of_people()
 
             tip = calculate_tip(bill, tip_percentage)
             total = calculate_total(bill, tip)
