@@ -37,16 +37,16 @@ def test_average_word_length_basic():
 
 def test_average_word_length_with_punctuation():
     result = get_average_word_length("hello, world.")
-    assert abs(result - 5.0) < 0.01  # punctuation stripped
+    assert abs(result - 5.0) < 0.01
 
 
 def test_average_word_length_empty():
-    assert get_average_word_length("") == 0.0  # no ZeroDivisionError
+    assert get_average_word_length("") == 0.0
 
 
 def test_character_frequency_alpha_only():
     freq = get_character_frequency("hi! 123")
-    assert freq == {"h": 1, "i": 1}  # no digits, no punctuation
+    assert freq == {"h": 1, "i": 1}
 
 
 def test_character_frequency_lowercase():

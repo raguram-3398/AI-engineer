@@ -4,6 +4,7 @@ def add_task(tasks: list[str], task: str) -> list[str]:
 
 
 def get_task(tasks: list[str], index: int) -> str:
+    """Returns the task at the valid index"""
     if not is_valid_index(tasks, index):
         raise ValueError("Index is not valid.")
     return tasks[index]
@@ -21,6 +22,7 @@ def remove_task(tasks: list[str], index: int) -> list[str]:
     return tasks[:index] + tasks[index + 1 :]
 
 def complete_task(tasks: list[str], index: int) -> list[str]:
+    """Marks the completed task with - DONE"""
     task = get_task(tasks, index)
     if task.endswith(" - DONE"):
         raise ValueError("Task is already completed.")

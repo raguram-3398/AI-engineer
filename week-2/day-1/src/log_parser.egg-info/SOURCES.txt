@@ -1,9 +1,0 @@
-pyproject.toml
-src/log_parser/__init__.py
-src/log_parser/main.py
-src/log_parser/parser.py
-src/log_parser.egg-info/PKG-INFO
-src/log_parser.egg-info/SOURCES.txt
-src/log_parser.egg-info/dependency_links.txt
-src/log_parser.egg-info/top_level.txt
-tests/test_parser.py

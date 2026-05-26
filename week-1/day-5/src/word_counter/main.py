@@ -8,7 +8,11 @@ from word_counter.counter import (
 
 def get_text_input() -> str:
     """Returns input text"""
-    return input("Enter Text: ")
+    while True:
+        text = input("Enter Text: ").strip()
+        if text:
+            return text
+        print("Text cannot be empty")
 
 
 def display_results(counts: dict[str, int], top_n: int) -> None:
