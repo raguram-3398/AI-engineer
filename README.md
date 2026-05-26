@@ -286,3 +286,203 @@ def test_parse_log_file_empty():
 **`pyproject.toml` with `pip install -e .` is the production standard.** `PYTHONPATH=src` is a workaround; editable installs are how real packages resolve imports. Every project from here uses this setup.
 
 ---
+
+# Day 9 — Custom Exceptions · Error Handling · File Reader
+
+**Week/Day:** Week 2, Day 2  
+**Topic:** Custom exception hierarchies, typed failure handling, parsing contracts, `finally` cleanup guarantees
+
+---
+
+## What I Built
+
+A resilient file reader pipeline with typed custom exceptions, layered error handling, parsing statistics, and strict separation between logic, display, and exception layers.
+
+    week-2/day-2/
+    ├── pyproject.toml
+    ├── data/
+    │   └── sample.txt
+    ├── src/
+    │   └── file_reader/
+    │       ├── __init__.py
+    │       ├── exceptions.py   ← centralized exception hierarchy
+    │       ├── reader.py       ← pure parsing + statistics logic
+    │       └── main.py         ← I/O and program flow
+    └── tests/
+        └── test_reader.py
+
+---
+
+## Core Logic
+
+### `exceptions.py` — Exception Layer
+
+Centralized typed exception hierarchy:
+
+    class FileReaderError(Exception):
+        """Base exception for all file reader errors."""
+
+    class FileNotFoundError(FileReaderError):
+        """Raised when the requested file does not exist."""
+
+    class FileEmptyError(FileReaderError):
+        """Raised when the file exists but contains no content."""
+
+    class FileParseError(FileReaderError):
+        """Raised when a line cannot be parsed into the expected format."""
+
+All file-reader failures inherit from `FileReaderError`, allowing callers to:
+- catch one specific failure
+- or catch the entire file-reader failure domain
+
+---
+
+### `reader.py` — Pure Logic Layer
+
+**`read_file(filepath: Path) -> list[str]`**  
+Reads file contents safely using `pathlib`. Raises:
+- `FileNotFoundError` if file is missing
+- `FileEmptyError` if file exists but contains no usable content
+
+Returns cleaned file lines only on success.
+
+**`parse_line(line: str) -> dict[str, str]`**  
+Parses a single `key:value` line into:
+
+    {
+        "key": "name",
+        "value": "Alice",
+    }
+
+Uses `split(":", maxsplit=1)` to preserve additional `:` characters inside values.
+
+Malformed lines raise `FileParseError`.
+
+**`parse_file(filepath: Path) -> list[dict[str, str]]`**  
+Calls `read_file()`, parses every line, skips malformed entries, and continues processing the rest of the dataset.
+
+Malformed rows are handled per-line:
+
+    except FileParseError:
+        continue
+
+This creates partial-failure tolerance — one bad row never destroys the entire ingestion pipeline.
+
+**`get_statistics(lines: list[str]) -> dict[str, int]`**  
+Tracks:
+- total lines
+- valid lines
+- error lines
+
+Uses parsing attempts themselves to calculate error rates.
+
+Example return:
+
+    {
+        "total_lines": 6,
+        "valid_lines": 5,
+        "error_lines": 1,
+    }
+
+---
+
+## `main.py` — IO Layer
+
+Builds the file path using `Path("data/sample.txt")`, calls parsing/statistics functions, displays results, and catches typed exceptions at the application boundary.
+
+Uses:
+
+    except FileReaderError as error:
+
+to safely handle all file-reader-specific failures.
+
+Uses:
+
+    finally:
+        print("File reading complete")
+
+to guarantee cleanup/logging behavior whether execution succeeds or fails.
+
+---
+
+## Failure Design
+
+    raw file
+    → file exists?          missing → raise FileNotFoundError
+    → file has content?     empty   → raise FileEmptyError
+    → line parseable?       bad     → raise FileParseError
+    → parse_file() catches malformed rows
+    → valid parsed entries
+    → statistics aggregation
+    → display
+
+Unlike Day 8:
+- malformed parsing now raises typed exceptions
+- callers decide recovery behavior
+- failure contracts stay explicit and composable
+
+---
+
+## Tests
+
+    # Missing file raises FileNotFoundError
+    def test_read_file_raises_for_missing_file()
+
+    # Empty file raises FileEmptyError
+    def test_read_file_raises_for_empty_file()
+
+    # Valid line parses correctly
+    def test_parse_line_parses_valid_line()
+
+    # Malformed line raises FileParseError
+    def test_parse_line_raises_for_invalid_line()
+
+    # Statistics return correct counts
+    def test_get_statistics_returns_correct_counts()
+
+Uses:
+- `pytest.raises(...)`
+- `tmp_path`
+- isolated filesystem testing
+- typed exception assertions
+
+---
+
+## Tools Used
+
+- `pathlib` — platform-safe filesystem paths
+- custom exception classes — typed failure contracts
+- `pytest.raises(...)` — exception validation
+- `tmp_path` fixture — portable filesystem testing
+- `finally` — guaranteed cleanup execution
+- `ruff` · `black` · `pytest` · `Git`
+- `pyproject.toml` + `pip install -e .`
+
+---
+
+## Key Takeaways
+
+**Typed exceptions create scalable failure architecture.**  
+Callers can recover differently from missing files, empty files, and malformed parsing.
+
+**Custom exception hierarchies become shared system contracts.**  
+Every layer imports the same error vocabulary from one source of truth.
+
+**Returning `None` and raising exceptions solve different problems.**  
+Day 8 treated malformed rows as ignorable. Day 9 treats parsing failures as explicit typed states.
+
+**`finally` guarantees execution.**  
+Critical for cleanup paths that must run regardless of crashes or uncaught exceptions.
+
+**Stable machine-facing schemas matter.**  
+Internal data structures use predictable snake_case keys:
+- `total_lines`
+- `valid_lines`
+- `error_lines`
+
+Human formatting belongs only in the display layer.
+
+**Logic, I/O, and error handling remain isolated.**  
+Pure functions never print. Display functions never parse. Exception types remain centralized in `exceptions.py`.
+
+---
