@@ -2,6 +2,7 @@ from text_analyzer.analyzer import get_summary, get_top_words, get_character_fre
 
 
 def get_text_input() -> str:
+    """Read multiline text input from the user."""
     print("Enter your text (press enter twice when done): ")
     lines: list[str] = []
     while True:
@@ -13,6 +14,7 @@ def get_text_input() -> str:
 
 
 def display_analysis(text: str) -> None:
+    """Display text analysis results to the console."""
     summary = get_summary(text)
     top_words = get_top_words(text, 5)
     char_freq = get_character_frequency(text)
@@ -33,6 +35,7 @@ def display_analysis(text: str) -> None:
 
 
 def main() -> None:
+    """Run the text analyzer application."""
     text = get_text_input()
     if not text.strip():
         print("No text provided")
