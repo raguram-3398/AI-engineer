@@ -30,7 +30,7 @@ def get_range() -> tuple[int, int]:
 
 
 def play_game(lower: int, upper: int) -> None:
-    """runs the guessing game"""
+    """runs the guessing game logic"""
     secret = generate_secret_number(lower, upper)
     attempts = 0
     while True:
@@ -47,6 +47,7 @@ def play_game(lower: int, upper: int) -> None:
 
 
 def main() -> None:
+    """Runs the guessing game application"""
     while True:
         lower, upper = get_range()
         play_game(lower, upper)

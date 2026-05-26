@@ -28,3 +28,7 @@ def test_word_counts() -> None:
     counts = {"hello": 5, "world": 2, "python": 3}
     assert get_total_word_count(counts) == 10
     assert get_unique_word_count(counts) == 3
+
+
+def test_clean_text_punctuation() -> None:
+    assert clean_text("it's a test.") == "its a test"

@@ -2,6 +2,7 @@ from tip_calculator.calculator import calculate_tip, calculate_total, split_bill
 
 
 def get_bill_amount() -> float:
+    """Gets the bill amount from the user"""
     while True:
         try:
             bill_amount = float(input("Enter bill amount: "))
@@ -13,6 +14,7 @@ def get_bill_amount() -> float:
 
 
 def get_tip_percentage() -> float:
+    """Gets the tip percentage from the user"""
     while True:
         try:
             tip_percentage = float(input("Enter tip percentage: "))
@@ -24,6 +26,7 @@ def get_tip_percentage() -> float:
 
 
 def get_no_of_people() -> int:
+    """Gets the tip no of people from the user"""
     while True:
         try:
             no_of_people = int(input("Enter number of people: "))
@@ -35,6 +38,7 @@ def get_no_of_people() -> int:
 
 
 def main() -> None:
+    """Runs the tip calculator application"""
     while True:
         try:
             bill = get_bill_amount()

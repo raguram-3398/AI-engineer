@@ -14,15 +14,21 @@ def count_words(text: str) -> int:
     return len(text.split())
 
 
+def clean_words(text: str) -> list[str]:
+    words = text.lower().split()
+    cleaned = ["".join(c for c in word if c.isalpha()) for word in words]
+    return [w for w in cleaned if w]
+
+
+def get_unique_word_count(text: str) -> int:
+    return len(set(clean_words(text)))
+
+
 def get_average_word_length(text: str) -> float:
-    words = text.split()
+    words = clean_words(text)
     if not words:
         return 0.0
-    cleaned = ["".join(c for c in word if c.isalpha()) for word in words]
-    cleaned = [w for w in cleaned if w]
-    if not cleaned:
-        return 0.0
-    return sum(len(w) for w in cleaned) / len(cleaned)
+    return sum(len(w) for w in words) / len(words)
 
 
 def get_character_frequency(text: str) -> dict[str, int]:
@@ -34,13 +40,11 @@ def get_character_frequency(text: str) -> dict[str, int]:
 
 
 def get_top_words(text: str, n: int) -> list[tuple[str, int]]:
-    words = text.lower().split()
+    words = clean_words(text)
     if not words:
         return []
-    cleaned = ["".join(c for c in word if c.isalpha()) for word in words]
-    cleaned = [w for w in cleaned if w]
     freq: dict[str, int] = {}
-    for word in cleaned:
+    for word in words:
         freq[word] = freq.get(word, 0) + 1
     sorted_words = sorted(freq.items(), key=lambda item: item[1], reverse=True)
     return sorted_words[:n]
@@ -51,11 +55,5 @@ def get_summary(text: str) -> dict[str, int | float]:
         "word_count": count_words(text),
         "sentence_count": count_sentences(text),
         "average_word_length": get_average_word_length(text),
-        "unique_words": len(
-            set(
-                "".join(c for c in w if c.isalpha())
-                for w in text.lower().split()
-                if any(c.isalpha() for c in w)
-            )
-        ),
+        "unique_words": get_unique_word_count(text),
     }
