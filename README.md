@@ -1109,3 +1109,193 @@ Built a production-style text analysis engine with:
 Foundation established for prompt pipelines and structured text processing in Week 7
 
 ---
+
+# 📘 Day 8 — File I/O + Log Parser System (Production Ingestion Pipeline)
+
+---
+
+## 🧠 Focus
+
+Build a resilient file ingestion system that converts raw log files into structured typed data while safely handling missing files, malformed lines, and external data failures without crashing.
+
+This is the foundation of real-world systems like log processors, dataset loaders, and AI ingestion pipelines.
+
+---
+
+## 📚 Key Concepts
+
+- context managers for safe file handling (`with open`)
+- pathlib for OS-independent file paths
+- line-by-line streaming for memory efficiency
+- structured parsing into dataclasses
+- graceful failure handling using `None` pattern
+- separation of IO vs pure logic
+- aggregation using dictionary patterns
+- filtering without mutating input state
+
+---
+
+## 🧱 Build
+
+Log Parser Pipeline:
+
+raw log file  
+→ file validation  
+→ streaming read  
+→ line parsing  
+→ skip malformed entries  
+→ structured LogEntry objects  
+→ filtering + aggregation  
+
+Failure rules:
+- missing file → raise FileNotFoundError  
+- empty file → return empty list  
+- malformed line → skip safely  
+
+---
+
+## 🧩 Structure
+
+week-2/day-1/  
+├── src/  
+│   └── log_parser/  
+│       ├── __init__.py  
+│       ├── parser.py  
+│       └── main.py  
+└── logs/  
+    └── sample.log  
+
+---
+
+## 🔧 Core Functions
+
+### parser.py (logic layer)
+
+LogEntry:
+    date: str  
+    time: str  
+    level: str  
+    message: str  
+
+parse_line(line: str) → LogEntry | None  
+    split line using maxsplit=3  
+    return None if invalid  
+    return structured LogEntry  
+
+parse_log_file(filepath: Path) → list[LogEntry]  
+    check file exists  
+    open file using context manager  
+    iterate line-by-line  
+    skip invalid lines  
+    return list of LogEntry  
+
+filter_by_level(entries, level: str) → list[LogEntry]  
+    return new filtered list  
+    no mutation  
+
+get_level_counts(entries) → dict[str, int]  
+    use dict.get(key, 0) + 1 pattern  
+    return frequency map  
+
+---
+
+### main.py (IO layer)
+
+display_entries(entries)  
+    print formatted logs  
+
+display_summary(entries)  
+    print level counts  
+
+main()  
+    build path using Path(__file__).parent  
+    call parse_log_file  
+    display results  
+
+---
+
+## 🧪 Testing
+
+Tests cover:
+- valid parsing into LogEntry  
+- malformed line returns None  
+- filtering correctness  
+- count aggregation accuracy  
+- missing file raises error  
+- malformed lines are skipped safely  
+
+Principle: pure logic = deterministic + fully testable
+
+---
+
+## 🛠️ Tools Used
+
+- pathlib → safe OS-independent paths  
+- with open → guaranteed resource cleanup  
+- dataclasses → structured data model  
+- pytest → unit testing  
+- ruff → linting  
+- black → formatting  
+- Git + GitHub → version control  
+
+---
+
+## 🔁 Workflow
+
+code  
+→ validate file  
+→ parse safely  
+→ transform data  
+→ test logic  
+→ lint  
+→ format  
+→ commit  
+→ push  
+
+---
+
+## ⚠️ Key Learnings
+
+- external files are always unreliable  
+- file operations must always use context managers  
+- parsing must isolate bad data, not crash system  
+- `None` is a valid signal for invalid input  
+- IO must be separate from business logic  
+- pathlib removes environment dependency issues  
+- streaming files is more scalable than loading into memory  
+- aggregation patterns repeat across all data systems  
+
+---
+
+## 🚨 Engineering Insight
+
+This system is a minimal ingestion engine:
+
+raw file → validation → parsing → filtering → aggregation → output  
+
+This is identical to:
+- AI document loaders  
+- log ingestion systems  
+- ETL pipelines  
+- embedding preprocessing systems  
+
+Core principle:
+
+never trust external input → always design for failure  
+
+---
+
+## 🚀 Outcome
+
+Built a production-style log ingestion pipeline with:
+
+- safe file handling  
+- structured parsing with dataclasses  
+- resilient failure handling  
+- pure function separation  
+- streaming-based processing  
+- aggregation + filtering utilities  
+- fully testable architecture  
+
+---
+
