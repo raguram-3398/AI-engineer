@@ -748,3 +748,267 @@ CLI
 → HTTP client
 → parser
 → Pydantic model
+
+
+---
+
+# Day 11 — Classes · Dataclasses · State Modeling · Typed Object Design
+
+**Week/Day:** Week 2, Day 4  
+**Topic:** Classes, instance variables, class variables, methods, dataclasses, object state, validation patterns
+
+---
+
+## What I Built
+
+A production-style book modeling system implemented in two versions:
+- regular class (`Book`)
+- dataclass (`BookData`)
+
+The project demonstrates:
+- stateful object design
+- shared vs per-instance state
+- pure methods
+- dataclass validation
+- typed modeling
+- production-style testability
+
+week-2/day-4/
+├── src/
+│   └── books/
+│       ├── __init__.py
+│       ├── book_class.py
+│       ├── book_dataclass.py
+│       └── main.py
+└── tests/
+    └── test_books.py
+
+---
+
+## Core Object Design
+
+### Regular Class — Book
+
+    class Book:
+        total_books: int = 0
+        LONG_BOOK_THRESHOLD: int = 300
+
+Purpose:
+- combines state + behavior
+- owns business logic
+- tracks shared system state
+
+Instance variables:
+
+    self.title
+    self.author
+    self.pages
+    self.year
+
+Shared class variables:
+
+    Book.total_books
+    Book.LONG_BOOK_THRESHOLD
+
+Key principle:
+- instance variables belong to one object
+- class variables belong to the class itself
+
+---
+
+## __init__
+
+    def __init__(self, title, author, pages, year):
+
+Purpose:
+- initializes object state
+- attaches data to self
+- increments shared counter
+
+    Book.total_books += 1
+
+Key idea:
+- every new instance mutates shared class state
+
+---
+
+## __str__
+
+    def __str__(self) -> str:
+        return f"{self.title} by {self.author} ({self.year})"
+
+Purpose:
+- human-readable object representation
+- automatic formatting during print()
+
+Rule:
+- return strings
+- never print inside __str__
+
+---
+
+## is_long()
+
+    def is_long(self) -> bool:
+        return self.pages > Book.LONG_BOOK_THRESHOLD
+
+Purpose:
+- encapsulates business rule
+- avoids magic numbers
+
+Key idea:
+- behavior should live with the object that owns the data
+
+---
+
+## get_age()
+
+    def get_age(self, current_year: int) -> int:
+        return current_year - self.year
+
+Purpose:
+- pure calculation
+- deterministic and testable
+
+Rule enforced:
+- never call datetime.now() inside domain logic
+- inject time as input
+
+---
+
+## summary()
+
+    def summary(self) -> str:
+        return f"..."
+
+Purpose:
+- formatted structured output
+- presentation-safe helper method
+
+---
+
+## Dataclass Version — BookData
+
+    @dataclass
+    class BookData:
+        title: str
+        author: str
+        pages: int
+        year: int
+
+Purpose:
+- lightweight structured data container
+- auto-generates:
+    - __init__
+    - __repr__
+    - __eq__
+
+Key idea:
+- use dataclass when object is mostly data
+
+---
+
+## __post_init__
+
+    def __post_init__(self) -> None:
+        if self.pages <= 0:
+            raise ValueError(...)
+
+        if self.year < 1000:
+            raise ValueError(...)
+
+Purpose:
+- validation after dataclass initialization
+- prevents invalid object state
+
+Key principle:
+- invalid data should fail immediately
+
+---
+
+## CLI Demonstration — main.py
+
+Demonstrated:
+- creating multiple Book objects
+- shared class variable behavior
+- dataclass auto-generated representation
+- method usage
+- object formatting
+
+Verified:
+- Book.total_books increments globally across instances
+
+---
+
+## Failure Design
+
+user creates invalid object
+→ ValueError raised immediately
+
+shared state mutation
+→ tracked through class variable
+
+pure calculations
+→ deterministic and testable
+
+dataclass validation
+→ invalid state blocked at creation
+
+---
+
+## Tests
+
+    test_str_format()
+    test_is_long()
+    test_get_age()
+    test_total_books()
+    test_invalid_pages()
+    test_invalid_year()
+
+Validated:
+- string formatting
+- long-book logic
+- age calculation
+- shared state behavior
+- validation guards
+
+---
+
+## Tools Used
+
+- classes
+- dataclasses
+- instance variables
+- class variables
+- __init__
+- __str__
+- __post_init__
+- pytest
+- type hints
+- f-strings
+
+---
+
+## Key Takeaways
+
+1. Classes model state + behavior together
+   → useful for agents, clients, workflows
+
+2. Dataclasses reduce boilerplate
+   → ideal for structured data containers
+
+3. Class variables are shared globally
+   → useful for counters and config
+
+4. Pure methods are easier to test
+   → inject dependencies instead of hardcoding
+
+5. Validation belongs near object creation
+   → fail fast on invalid state
+
+6. Architecture matters even in small systems
+
+CLI
+→ object model
+→ validation
+→ tests
