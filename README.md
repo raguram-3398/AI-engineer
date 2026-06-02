@@ -7,11 +7,24 @@
 
 ---
 
-## Structure
+## Status
+
+Phase 1 complete. Starting Phase 2 (Week 3) next.
+
+| Phase | Weeks | Status |
+|---|---|---|
+| Phase 1 — Foundations | Weeks 1–2 | ✅ Complete |
+| Phase 2 — LLM Engineering + RAG | Weeks 3–5 | Starting |
+| Phase 3 — Agentic Systems + Production | Weeks 6–8 | Pending |
+
+---
+
+## Repository Structure
 
 ```
 ai-engineer-plan/
 ├── README.md
+├── progress_log.md
 ├── week-1/
 │   ├── day-1/   ← CLI Calculator
 │   ├── day-2/   ← Number Guessing Game
@@ -20,29 +33,21 @@ ai-engineer-plan/
 │   ├── day-5/   ← Word Frequency Counter
 │   ├── day-6/   ← Text Analyzer
 │   └── day-7/   ← Week 1 Refactor Pass
-├── week-2/
-│   └── day-1/   ← Log File Parser
-│   ...
+└── week-2/
+    ├── day-1/   ← Log File Parser
+    ├── day-2/   ← Robust File Reader
+    ├── day-3/   ← Weather API Client
+    ├── day-4/   ← Git + README pass
+    ├── day-5/   ← Refactor pass (comprehensions, Optional[T])
+    ├── day-6/   ← Book Class (OOP)
+    └── day-7/   ← Week 2 audit + Phase 2 orientation
 ```
 
 ---
 
-## Week 1 — Python Foundations
+## Architecture Pattern — Applied Every Day
 
-**Theme:** Build six CLI tools using production-grade Python patterns — typed functions, pure logic vs IO separation, immutable state, validated input, and a full test suite for every project.
-
-| Day | Project | Topics |
-|-----|---------|--------|
-| 0 | Environment setup | pyenv, uv, ruff, black, pytest, GitHub SSH |
-| 1 | CLI Calculator | Variables, type hints, `ValueError`, boundary pattern |
-| 2 | Number Guessing Game | Conditionals, `while True` vs `while condition`, loop termination |
-| 3 | Tip Calculator | Pure functions, scope, docstrings, guard clauses |
-| 4 | Todo CLI | `list[str]` state, immutable transformations, slicing |
-| 5 | Word Frequency Counter | `dict[str, int]`, `.get()`, sets, ranked output |
-| 6 | Text Analyzer | String methods, `re.split()`, f-strings, composite returns |
-| 7 | Refactor pass | DRY, function extraction, test coverage, production cleanup |
-
-### Architecture Pattern (applied every day)
+Every project follows the same three-layer structure. No exceptions.
 
 ```
 src/
@@ -55,102 +60,18 @@ tests/
 └── test_<logic>.py  ← pytest, covers pure functions only
 ```
 
-Every project follows the same three-layer boundary:
+**Three-layer boundary:**
 
 ```
-input layer (main.py)   →   validate, retry, own the UX
-logic layer (*.py)      →   pure functions, raise ValueError, return typed results
-output layer (main.py)  →   catch exceptions, format and print
+input layer   (main.py)    →  validate, retry, own the UX
+logic layer   (<logic>.py) →  pure functions, raise, return typed results
+output layer  (main.py)    →  catch exceptions, format and print
 ```
 
-### Key Patterns Established
-
-**Typed exceptions over mixed return types.** `calculate()` raises `ValueError`, never returns `float | str`. Callers catch at the boundary.
-
-**Immutable list transformations.** `add_task()`, `remove_task()`, `complete_task()` all return new lists — never mutate arguments. Tests verify the original is unchanged.
-
-**`.get(key, default)` reflex.** Used throughout Day 5 and Day 6 for safe dictionary access. Direct key access is never used where the key might be absent.
-
-**Granular input validation.** Each getter function owns its own `while True` retry loop. Bad input on one field never resets the others.
-
-**`pytest.raises(ValueError, match=...)`** — testing the right exception with the right message, not just that something raised.
-
-**Duplication as the extraction signal.** When the same logic appears twice, it becomes a named function. `clean_words()`, `is_valid_index()`, `get_unique_word_count()` all emerged this way.
-
-### What Week 1 Maps To
-
-| Week 1 pattern | Week 3+ equivalent |
-|---|---|
-| `ValueError` at boundaries | FastAPI 422 + Pydantic field errors |
-| `while result != "correct"` | Agent loop with `max_iterations` guard |
-| Immutable list transformations | Conversation history trimming |
-| `dict[str, int]` accumulation | Token cost tracker |
-| `re.split()` for sentences | PII scrubber with `re.sub()` |
-| Pure functions, no module-level state | Stateless FastAPI service functions |
-
----
-
-## Toolchain
-
-```bash
-# Per-project setup (Week 1)
-uv venv .venv
-source .venv/bin/activate
-pip install ruff black pytest pytest-asyncio
-
-# Daily workflow
-ruff check .
-black .
-pytest
-git add . && git commit -m "type: message" && git push
-```
-
-**Commit convention:** `feat:` / `fix:` / `refactor:` / `docs:`
-
----
-
-
-# Day 8 — File I/O · Error Handling · Log File Parser
-
-**Week/Day:** Week 2, Day 1  
-**Topic:** File I/O with `pathlib`, context managers, graceful failure handling, `pyproject.toml` setup
-
----
-
-## What I Built
-
-A resilient log file ingestion pipeline. Reads raw `.log` files line by line, parses each into a typed `LogEntry` dataclass, and handles every failure mode without crashing the system.
-
-```
-week-2/day-1/
-├── pyproject.toml
-├── src/
-│   └── log_parser/
-│       ├── __init__.py
-│       ├── parser.py    ← pure parsing functions
-│       └── main.py      ← file I/O and program flow
-├── logs/
-│   └── sample.log
-└── tests/
-    └── test_log_parser.py
-```
-
----
-
-## pyproject.toml Setup
-
-Starting from Day 8, `PYTHONPATH=src` is replaced with a `pyproject.toml` that makes `src/` the package root. No more prefixing every command.
+**Project setup from Week 2 onward:**
 
 ```toml
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
-
-[project]
-name = "log-parser"
-version = "0.1.0"
-requires-python = ">=3.12"
-
+# pyproject.toml — replaces PYTHONPATH=src
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -160,855 +81,235 @@ testpaths = ["tests"]
 [tool.ruff]
 src = ["src"]
 line-length = 88
-
-[tool.black]
-line-length = 88
 ```
-
-**Install the package in editable mode once after setup:**
 
 ```bash
-pip install -e .
+pip install -e .   # editable install — imports work everywhere without PYTHONPATH
 ```
 
-After this, imports work from anywhere without `PYTHONPATH=src`:
+---
 
-```python
-# Before (Week 1)
-# PYTHONPATH=src pytest
+## Standing Rules — Never Violated
 
-# After (Week 2+)
+1. A function without type hints on every argument and return value is not finished
+2. A function without a docstring is not finished
+3. `ruff check` → `black` → `pytest` before every commit
+4. Timeout on every external API call — from Week 2 Day 3, forever
+5. Semantic commits only — `feat:` `fix:` `docs:` `refactor:` `test:` `chore:`
+6. `tmp_path` for all file-based tests — CI-safe, no local filesystem dependency
+7. `pytest.raises(ExceptionType, match=...)` for all exception tests — never `try/assert False`
+8. Pure functions never call `input()` or `print()` — display and logic never mix
+
+---
+
+## Daily Workflow
+
+```bash
+cd week-X/day-Y
+source .venv/bin/activate
+# write code
+ruff check src/
+black src/
 pytest
+git add .
+git commit -m "feat: description in present tense"
+git push
 ```
 
 ---
 
-## Core Logic
+## Week 1 — Python Foundations
 
-### `parser.py` — Pure Logic Layer
+**Theme:** Build six CLI tools using production-grade patterns. The apps are throwaway. The habits are not.
 
-**`LogEntry` dataclass**
+### Projects
 
-```python
-@dataclass
-class LogEntry:
-    date: str
-    time: str
-    level: str
-    message: str
-```
+| Day | Project | Core topics |
+|---|---|---|
+| 0 | Environment setup | pyenv, uv, ruff, black, pytest, GitHub SSH, pytest.ini |
+| 1 | CLI Calculator | Type hints, `ValueError`, boundary pattern, `pytest.raises` |
+| 2 | Number Guessing Game | Conditionals, `while True` vs `while condition`, loop termination |
+| 3 | Tip Calculator | Pure functions, scope, docstrings, guard clauses |
+| 4 | Todo CLI | `list[str]`, immutable transformations, slicing, `is_valid_index()` |
+| 5 | Word Frequency Counter | `dict[str, int]`, `.get()`, sets, ranked output |
+| 6 | Text Analyzer | String methods, `re.split()`, f-strings, composite returns |
+| 7 | Refactor pass | DRY, function extraction, test coverage, production cleanup |
 
-**`parse_line(line: str) -> LogEntry | None`**  
-Splits the line using `maxsplit=3`. Returns `None` for any malformed input — never raises, never crashes the pipeline.
+### Key Patterns Established in Week 1
 
-**`parse_log_file(filepath: Path) -> list[LogEntry]`**  
-Three failure cases handled separately:
-- Missing file → raises `FileNotFoundError`
-- Empty file → returns `[]`
-- Malformed line → skips silently, continues
+**Typed exceptions over mixed return types.**
+`calculate()` raises `ValueError`, never returns `float | str`. A function that returns either a value or an error string forces callers to check `isinstance()` to detect failure — untraceable at 100 concurrent requests. Raise at the logic layer. Catch at the boundary.
 
-**`filter_by_level(entries, level: str) -> list[LogEntry]`**  
-Returns a new filtered list. Pure — no mutation.
+**Immutable list transformations.**
+`add_task()`, `remove_task()`, `complete_task()` all return new lists — never mutate the argument. Tests verify the original is unchanged: `assert tasks == ["study"]`. If a function modifies its argument in place, you lose the original for logging and debugging. Immutability is observability.
 
-**`get_level_counts(entries) -> dict[str, int]`**  
-Uses `.get(level, 0) + 1` accumulation pattern — same as Day 5's word counter, applied to log levels.
+**The slicing pattern.**
+`remove_task()` uses `tasks[:index] + tasks[index + 1:]` — builds a new list from slices. This is the exact pattern the Week 3 conversation trimmer uses: `messages[-max_messages:]`. Same mental model, different domain.
 
-### `main.py` — IO Layer
+**`.get(key, default)` reflex.**
+`counts.get(word, 0) + 1` — never crashes on first occurrence. Direct key access `counts[word]` raises `KeyError` on any missing key. In AI engineering, missing keys are everywhere: Claude's response JSON might not have a `"confidence"` key, Pinecone metadata might not have a `"page"` field, the cost tracker might not have an entry for a new request ID. Build the reflex now.
 
-Builds the log file path using `Path(__file__).parent` — no hardcoded strings, works on any machine. Calls `parse_log_file`, displays entries and summary, handles `FileNotFoundError` at the boundary.
+**Granular input validation.**
+Each getter owns its own `while True` retry loop. Bad input on `get_num_people()` never forces the user to re-enter the bill amount. This maps to Pydantic field-level validation in Week 3 — a 422 identifies exactly which field failed, not a generic "try again."
 
----
+**Duplication as the extraction signal.**
+When the same logic appears twice, it becomes a named function. `clean_words()`, `is_valid_index()`, `get_unique_word_count()` all emerged from noticing duplication. In Week 3, multiple pipeline steps that all clean text before processing become one `clean_text()` called from everywhere.
 
-## Failure Design
+**`while condition` for process loops.**
+`while result != "correct"` makes the termination rule visible at the loop level. `while True + break` buries it. For input validation, `while True` is correct. For process loops — agents, retries, iterations — the stopping condition belongs at the top. In Week 7, every agent loop has an explicit termination condition and a `max_iterations` ceiling.
 
-```
-raw log file
-→ file exists?          missing → raise FileNotFoundError
-→ file has content?     empty   → return []
-→ line parseable?       bad     → return None, skip and continue
-→ LogEntry objects
-→ filter + aggregate
-→ display
-```
+**`pytest.raises(ValueError, match=...)`.**
+Tests the right exception with the right message, not just that something raised. This is exactly how retry logic gets tested in Week 3 — when Claude returns malformed JSON, the test asserts a specific typed exception with a specific message was raised.
 
-`parse_line()` returning `LogEntry | None` instead of raising is a deliberate design choice — one bad line should never stop the other 9,999. The caller filters `None` out and continues.
+**Stateless service functions.**
+`count_words()` starts fresh with an empty `counts` dict on every call. A `counts` dict at module level would accumulate across users — at 100 concurrent requests, every user's data bleeds into each other. Stateless pure functions are safe under concurrent load. Module-level state is a race condition.
 
----
+### What Week 1 Maps To
 
-## Tests
-
-```python
-# Valid line parses to correct LogEntry
-def test_parse_line_valid():
-
-# Malformed line returns None
-def test_parse_line_invalid():
-
-# Filter by level returns correct subset
-def test_filter_by_level():
-
-# Level counts aggregate correctly
-def test_get_level_counts():
-
-# Missing file raises FileNotFoundError
-def test_parse_log_file_missing():
-
-# Malformed lines in file are skipped
-def test_parse_log_file_skips_malformed():
-
-# Empty file returns empty list (uses tmp_path fixture)
-def test_parse_log_file_empty():
-```
-
-`tmp_path` is a pytest fixture that creates a temporary directory, cleaned up after the test. Tests using `tmp_path` work in any CI environment with no local filesystem dependency.
+| Week 1 pattern | Week 3+ equivalent |
+|---|---|
+| `ValueError` raised, caught at boundary | FastAPI 422 + Pydantic field errors |
+| `while result != "correct"` | Agent loop with `max_iterations` guard |
+| Immutable list transformations | Conversation history trimming |
+| `dict[str, int]` accumulation with `.get()` | Token cost tracker |
+| `re.split()` for sentence splitting | PII scrubber with `re.sub()` |
+| `get_summary()` returning `dict[str, int | float]` | Pipeline cost/metrics dict |
+| Pure functions, no module-level state | Stateless FastAPI service functions |
+| `pytest.raises(ValueError, match=...)` | Testing LLM retry logic |
 
 ---
 
-## Tools Used
+## Week 2 — Production Python
 
-- `pathlib` — OS-independent path construction
-- `dataclasses` — typed structured data model
-- `with open(...)` — guaranteed file handle cleanup
-- `pytest` + `tmp_path` fixture — CI-safe file tests
-- `ruff` · `black` · `Git`
-- `pyproject.toml` + `pip install -e .` — replaces `PYTHONPATH=src`
+**Theme:** File I/O, error handling, external APIs, object-oriented design, Git discipline. Every pattern maps directly to a Week 3 component.
 
----
+### Projects
 
-## Key Takeaways
+| Day | Project | Core topics |
+|---|---|---|
+| 8 | Log File Parser | `with open()`, `pathlib`, streaming, three-case error handling, `tmp_path` |
+| 9 | Robust File Reader | Custom exception hierarchy, `finally`, typed failure contracts |
+| 10 | Weather API Client | `requests`, Pydantic, `.env`, timeout rule, parse/fetch separation |
+| 11 | Git + README pass | Semantic commits, branching workflow, portfolio READMEs |
+| 12 | Refactor pass | List comprehensions, `lambda`, `Optional[T]`, `T \| None` |
+| 13 | Book Class | Classes vs dataclasses, `__init__`, `__str__`, three-way decision rule |
+| 14 | Week 2 audit + Phase 2 orientation | Final code audit, Phase 2 reading |
 
-**`with open(...)` is non-negotiable.** Guarantees file handle closure even if an exception is raised mid-read. A leaked handle under concurrent load accumulates until the OS kills the process.
+### Key Patterns Established in Week 2
 
-**`parse_line()` returning `None` is a pipeline resilience pattern.** The Week 4 document loader uses the same shape: one unparseable chunk returns `None`, the caller skips it, the other 9,999 chunks process normally.
+**The `with` statement is non-negotiable.**
+`with open(...) as f:` guarantees file handle closure even if an exception is raised mid-read. `f = open(...)` without a context manager is a resource leak — at 100 concurrent requests, 100 leaked handles accumulate until the OS kills the process.
 
-**`tmp_path` makes tests portable.** Tests tied to local file paths break silently in CI Docker containers. `tmp_path` works everywhere, forever.
+**Streaming vs loading.**
+`for line in file:` processes one line at a time — never holds the whole file in memory. `file.readlines()` loads everything at once. At 100 concurrent requests each parsing a 500MB file, streaming costs kilobytes; loading costs 50GB. The log parser uses streaming by default.
 
-**`pyproject.toml` with `pip install -e .` is the production standard.** `PYTHONPATH=src` is a workaround; editable installs are how real packages resolve imports. Every project from here uses this setup.
+**`pathlib` for all file paths.**
+`Path(__file__).parent.parent / "data" / "sample.log"` builds a path relative to the source file — works on any machine, in any Docker container, regardless of where the script is run from. Hardcoded string paths break the moment someone clones the repo to a different directory structure.
 
----
+**`tmp_path` for all file-based tests.**
+pytest's `tmp_path` fixture creates a temporary directory that pytest cleans up after the test. Tests using `tmp_path` work in any CI environment. Tests that hardcode `"../logs/sample.log"` break silently in CI Docker containers.
 
-# Day 9 — Custom Exceptions · Error Handling · File Reader
+**The three-case error handling pattern.**
+Every file loader and document parser follows this structure:
+- Missing resource → raise immediately
+- Empty resource → return empty collection (`[]`)
+- Malformed item → skip, continue, never crash the pipeline
 
-**Week/Day:** Week 2, Day 2  
-**Topic:** Custom exception hierarchies, typed failure handling, parsing contracts, `finally` cleanup guarantees
+The log parser uses `LogEntry | None` from `parse_line()` — return `None`, let the caller filter and continue. One bad line never stops the other 9,999. The Week 4 document loader uses the same structure.
 
----
+**Custom exception hierarchies.**
+`FileReaderError` as base, `FileNotFoundError`, `FileEmptyError`, `FileParseError` as subclasses. Callers can catch one specific failure or the entire failure domain with one handler. All exception types live in `exceptions.py` — one file, all imports from one source of truth. In Week 3 this becomes `LLMError`, `LLMParseError`, `LLMTimeoutError`, `CostLimitExceededError`.
 
-## What I Built
+**`finally` for guaranteed cleanup.**
+`finally:` runs whether or not an exception was raised — and even if the exception was not caught. In Week 6, database connections close in `finally` blocks. Cleanup code that must always run belongs here.
 
-A resilient file reader pipeline with typed custom exceptions, layered error handling, parsing statistics, and strict separation between logic, display, and exception layers.
+**The timeout rule — starts Week 2 Day 3, never stops.**
+Every external call gets `timeout=10`. No exceptions. Claude API, Whisper, Pinecone, databases — all of them. A call without a timeout can hang forever, hold a thread, and accumulate until the server falls over.
 
-    week-2/day-2/
-    ├── pyproject.toml
-    ├── data/
-    │   └── sample.txt
-    ├── src/
-    │   └── file_reader/
-    │       ├── __init__.py
-    │       ├── exceptions.py   ← centralized exception hierarchy
-    │       ├── reader.py       ← pure parsing + statistics logic
-    │       └── main.py         ← I/O and program flow
-    └── tests/
-        └── test_reader.py
+**Parse/fetch separation.**
+`parse_weather()` is a separate function from `get_weather()`. Parsing logic is testable with hardcoded dictionaries — no network access needed. In Week 3, every Claude response parser is separate from its API caller for the same reason: fast, network-free tests that never flake.
 
----
+**Pydantic for external data.**
+Raw API responses are unstructured. Pydantic models enforce shape at parse time. If the API renames a field, the code raises `ValidationError` immediately rather than silently returning `None` buried in a pipeline. `response_data.get("temperature")` is silent failure. `WeatherResponse(**data)` is immediate, typed failure.
 
-## Core Logic
+**The three-way object decision rule.**
+- Use a **function** when it's just a transformation — `scrub_pii()`, `clean_words()`
+- Use a **dataclass** when it's just data — `LogEntry`, `BookData`, Pydantic response models
+- Use a **class** when you have state and behavior together — structured loggers, API clients, agent state managers
 
-### `exceptions.py` — Exception Layer
+**Class variables vs instance variables.**
+`Book.total_books` is shared across all instances. `self.title` is unique per instance. At 100 concurrent users, a class variable shared across instances is a race condition — two requests can increment it simultaneously and one increment gets lost. In production, shared counters live in Redis or PostgreSQL, not Python class variables. The class variable is the right learning tool; knowing its production limit is the interview answer.
 
-Centralized typed exception hierarchy:
+**Never call `datetime.now()` inside domain logic.**
+`get_age(self, current_year: int) -> int` — time is passed in as an argument, never fetched internally. A method that calls `datetime.now()` internally returns different results on different days — it's impure and can't be tested with a fixed expected value.
 
-    class FileReaderError(Exception):
-        """Base exception for all file reader errors."""
+**Semantic commits from Day 11, forever.**
+`feat:` `fix:` `docs:` `refactor:` `test:` `chore:` — no capital letters, no period, present tense, under 72 characters. A hiring manager who scrolls your commit history sees `feat: add hybrid retrieval with BM25 and Pinecone` vs `update`. The former tells a story. The latter tells nothing.
 
-    class FileNotFoundError(FileReaderError):
-        """Raised when the requested file does not exist."""
+**"What I did not build and why" in every README.**
+Not an apology. A demonstration of engineering judgment — intentional tradeoffs, not accidental omissions. Three answers per project, ready to give in any interview. Examples:
+- "No persistent storage — out of scope for a CLI demo. In production: PostgreSQL with user_id and timestamp."
+- "No retry on API calls — the pattern is introduced in Week 3 with exponential backoff."
 
-    class FileEmptyError(FileReaderError):
-        """Raised when the file exists but contains no content."""
+### What Week 2 Maps To
 
-    class FileParseError(FileReaderError):
-        """Raised when a line cannot be parsed into the expected format."""
-
-All file-reader failures inherit from `FileReaderError`, allowing callers to:
-- catch one specific failure
-- or catch the entire file-reader failure domain
-
----
-
-### `reader.py` — Pure Logic Layer
-
-**`read_file(filepath: Path) -> list[str]`**  
-Reads file contents safely using `pathlib`. Raises:
-- `FileNotFoundError` if file is missing
-- `FileEmptyError` if file exists but contains no usable content
-
-Returns cleaned file lines only on success.
-
-**`parse_line(line: str) -> dict[str, str]`**  
-Parses a single `key:value` line into:
-
-    {
-        "key": "name",
-        "value": "Alice",
-    }
-
-Uses `split(":", maxsplit=1)` to preserve additional `:` characters inside values.
-
-Malformed lines raise `FileParseError`.
-
-**`parse_file(filepath: Path) -> list[dict[str, str]]`**  
-Calls `read_file()`, parses every line, skips malformed entries, and continues processing the rest of the dataset.
-
-Malformed rows are handled per-line:
-
-    except FileParseError:
-        continue
-
-This creates partial-failure tolerance — one bad row never destroys the entire ingestion pipeline.
-
-**`get_statistics(lines: list[str]) -> dict[str, int]`**  
-Tracks:
-- total lines
-- valid lines
-- error lines
-
-Uses parsing attempts themselves to calculate error rates.
-
-Example return:
-
-    {
-        "total_lines": 6,
-        "valid_lines": 5,
-        "error_lines": 1,
-    }
+| Week 2 pattern | Week 3+ equivalent |
+|---|---|
+| Three-case error handling | Document loader (missing PDF raises, empty returns `[]`, bad page skips) |
+| `exceptions.py` hierarchy | LLM exception types — `LLMParseError`, `LLMTimeoutError`, `CostLimitExceededError` |
+| `parse_weather()` separate from `get_weather()` | Claude response parser separate from API caller |
+| Pydantic response models | Typed structured outputs from Claude |
+| `timeout=10` on every call | Claude, Whisper, Pinecone, database — all timed |
+| `tmp_path` in tests | CI-safe test suite throughout all projects |
+| `finally` for cleanup | Database connection close in Week 6 |
+| `dataclass` for structured data | Agent state, retrieval chunks, log entries |
+| Semantic commits | Readable commit history through Week 8 |
 
 ---
 
-## `main.py` — IO Layer
+## Phase 1 → Phase 2 Mapping
 
-Builds the file path using `Path("data/sample.txt")`, calls parsing/statistics functions, displays results, and catches typed exceptions at the application boundary.
+Every habit built in Phase 1 maps directly to a Week 3 component. Nothing was busywork.
 
-Uses:
-
-    except FileReaderError as error:
-
-to safely handle all file-reader-specific failures.
-
-Uses:
-
-    finally:
-        print("File reading complete")
-
-to guarantee cleanup/logging behavior whether execution succeeds or fails.
-
----
-
-## Failure Design
-
-    raw file
-    → file exists?          missing → raise FileNotFoundError
-    → file has content?     empty   → raise FileEmptyError
-    → line parseable?       bad     → raise FileParseError
-    → parse_file() catches malformed rows
-    → valid parsed entries
-    → statistics aggregation
-    → display
-
-Unlike Day 8:
-- malformed parsing now raises typed exceptions
-- callers decide recovery behavior
-- failure contracts stay explicit and composable
+| Phase 1 habit | Week 3+ application |
+|---|---|
+| `list` slicing — `tasks[:index] + tasks[index+1:]` | Conversation trimmer — `messages[-max_messages:]` |
+| `dict.get(key, 0) + 1` accumulation | Token cost tracker per request |
+| Exception hierarchy in `exceptions.py` | `LLMError`, `LLMParseError`, `LLMTimeoutError` |
+| `timeout=10` on every external call | Claude API, Whisper, Pinecone — all timed |
+| `re.split()` in text analyzer | `re.sub()` in PII scrubber |
+| Pure functions, no module-level state | Stateless FastAPI service layer |
+| `parse_weather()` separate from `get_weather()` | Claude response parser separate from API caller |
+| `pytest.raises(ValueError, match=...)` | Testing LLM retry — malformed JSON raises `LLMParseError` |
+| `get_summary()` returning `dict[str, int \| float]` | Cost/metrics dict — `{"request_id": ..., "cost_usd": 0.004}` |
+| `dataclass` for `LogEntry` | Typed response models for Claude structured output |
+| `while result != "correct"` | Agent loop with `max_iterations` guard |
+| Immutable transformations + test original unchanged | PII scrubber returns new cleaned list, original retained for logging |
 
 ---
 
-## Tests
+## Pre-Commit Checklist — Run Every Day
 
-    # Missing file raises FileNotFoundError
-    def test_read_file_raises_for_missing_file()
+Before every `git commit`, check all six:
 
-    # Empty file raises FileEmptyError
-    def test_read_file_raises_for_empty_file()
-
-    # Valid line parses correctly
-    def test_parse_line_parses_valid_line()
-
-    # Malformed line raises FileParseError
-    def test_parse_line_raises_for_invalid_line()
-
-    # Statistics return correct counts
-    def test_get_statistics_returns_correct_counts()
-
-Uses:
-- `pytest.raises(...)`
-- `tmp_path`
-- isolated filesystem testing
-- typed exception assertions
+- [ ] `ruff check src/` — zero errors
+- [ ] `black src/` — reformatted
+- [ ] `pytest` — all tests pass
+- [ ] Every function has type hints on every argument and return value including `-> None`
+- [ ] Every function has a docstring stating its promise
+- [ ] Zero magic numbers — every constant is named
 
 ---
 
-## Tools Used
-
-- `pathlib` — platform-safe filesystem paths
-- custom exception classes — typed failure contracts
-- `pytest.raises(...)` — exception validation
-- `tmp_path` fixture — portable filesystem testing
-- `finally` — guaranteed cleanup execution
-- `ruff` · `black` · `pytest` · `Git`
-- `pyproject.toml` + `pip install -e .`
-
----
-
-## Key Takeaways
-
-**Typed exceptions create scalable failure architecture.**  
-Callers can recover differently from missing files, empty files, and malformed parsing.
-
-**Custom exception hierarchies become shared system contracts.**  
-Every layer imports the same error vocabulary from one source of truth.
-
-**Returning `None` and raising exceptions solve different problems.**  
-Day 8 treated malformed rows as ignorable. Day 9 treats parsing failures as explicit typed states.
-
-**`finally` guarantees execution.**  
-Critical for cleanup paths that must run regardless of crashes or uncaught exceptions.
-
-**Stable machine-facing schemas matter.**  
-Internal data structures use predictable snake_case keys:
-- `total_lines`
-- `valid_lines`
-- `error_lines`
-
-Human formatting belongs only in the display layer.
-
-**Logic, I/O, and error handling remain isolated.**  
-Pure functions never print. Display functions never parse. Exception types remain centralized in `exceptions.py`.
-
----
-
-# Day 10 — Dependency Management · Env Vars · HTTP APIs · Typed API Client
-
-**Week/Day:** Week 2, Day 3  
-**Topic:** Virtual environments, requirements.txt, environment variables (.env), HTTP requests, API integration, Pydantic-based response validation
-
----
-
-## What I Built
-
-A production-style weather CLI system that integrates with a real external API (Open-Meteo), loads configuration from environment variables, performs HTTP requests with strict timeout rules, and converts unstructured JSON into validated Pydantic models.
-
-week-2/day-3/
-├── .env
-├── .gitignore
-├── requirements.txt
-├── src/
-│   └── weather/
-│       ├── __init__.py
-│       ├── client.py     ← HTTP + parsing + Pydantic models
-│       └── main.py       ← CLI orchestration + user I/O
-└── tests/
-    └── test_weather.py
-
----
-
-## Environment Setup
-
-Virtual environments isolate dependencies per project:
-
-    python -m venv .venv
-    source .venv/bin/activate
-
-All dependencies are installed into .venv, not system Python.
-
----
-
-## Dependency Management
-
-Installed libraries:
-
-    requests
-    pydantic
-    python-dotenv
-
-Frozen into deterministic build file:
-
-    pip freeze > requirements.txt
-
-This ensures identical environments across:
-- local machine
-- CI pipelines
-- production containers
-
----
-
-## Environment Variables (.env)
-
-Secrets and configuration are stored outside code:
-
-    ANTHROPIC_API_KEY=sk-test-fake
-
-Loaded using dotenv:
-
-    from dotenv import load_dotenv
-    import os
-
-    load_dotenv()
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-
-Key principle:
-- secrets never hardcoded
-- .env never committed to git
-- configuration separated from logic
-
----
-
-## Core Logic — client.py
-
-### Pydantic Models
-
-    class CurrentWeather(BaseModel):
-        temperature: float
-        windspeed: float
-        weathercode: int
-
-    class WeatherResponse(BaseModel):
-        latitude: float
-        longitude: float
-        current_weather: CurrentWeather
-
-Purpose:
-- enforce structure at runtime
-- prevent silent key errors
-- convert raw JSON → typed object
-
----
-
-### parse_weather(data)
-
-    def parse_weather(data: dict) -> WeatherResponse:
-        return WeatherResponse(
-            latitude=data["latitude"],
-            longitude=data["longitude"],
-            current_weather=CurrentWeather(
-                temperature=data["current"]["temperature_2m"],
-                windspeed=data["current"]["wind_speed_10m"],
-                weathercode=data["current"]["weather_code"],
-            ),
-        )
-
-Key idea:
-- external API shape is unstable
-- internal schema is stable
-- mapping layer isolates change
-
----
-
-### get_weather(latitude, longitude)
-
-    def get_weather(latitude: float, longitude: float) -> WeatherResponse:
-        url = "https://api.open-meteo.com/v1/forecast"
-
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "current": "temperature_2m,wind_speed_10m,weather_code",
-        }
-
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-
-        data = response.json()
-
-        if isinstance(data, list):
-            data = data[-1]
-
-        return parse_weather(data)
-
-Failure handling:
-- Timeout → network delay protection
-- ConnectionError → offline handling
-- HTTPError → bad status codes
-- list response → normalized to single object
-
-Rule enforced:
-Every external call uses timeout=10
-
----
-
-## CLI Layer — main.py
-
-### get_coordinates()
-
-    def get_coordinates() -> tuple[float, float]:
-        lat = float(input("Enter latitude: "))
-        lon = float(input("Enter longitude: "))
-        return lat, lon
-
----
-
-### display_weather(weather)
-
-    def display_weather(weather: WeatherResponse) -> None:
-        print("Temperature:", weather.current_weather.temperature)
-        print("Wind Speed:", weather.current_weather.windspeed)
-        print("Weather Code:", weather.current_weather.weathercode)
-
----
-
-### main()
-
-    def main() -> None:
-        try:
-            lat, lon = get_coordinates()
-            weather = get_weather(lat, lon)
-            display_weather(weather)
-
-        except Exception as error:
-            print("Error:", error)
-
----
-
-## Failure Design
-
-user input
-→ invalid float?        ValueError handled
-→ HTTP request          timeout / connection / HTTP error handled
-→ API response          normalized (list → dict)
-→ schema validation     Pydantic enforces structure
-→ final object          safe WeatherResponse
-
----
-
-## Tests
-
-    def test_parse_weather_valid():
-        data = {
-            "latitude": 33.21,
-            "longitude": -97.13,
-            "current": {
-                "temperature_2m": 28.5,
-                "wind_speed_10m": 12.3,
-                "weather_code": 1,
-            }
-        }
-
-        result = parse_weather(data)
-        assert result.current_weather.temperature == 28.5
-
-    def test_parse_weather_missing_field_fails():
-        data = {
-            "latitude": 33.21,
-            "longitude": -97.13,
-            "current": {
-                "temperature_2m": 28.5,
-                "wind_speed_10m": 12.3,
-            }
-        }
-
-        try:
-            parse_weather(data)
-            assert False
-        except Exception:
-            assert True
-
----
-
-## Tools Used
-
-- requests — HTTP client  
-- pydantic — runtime schema validation  
-- python-dotenv — environment variable loading  
-- venv — dependency isolation  
-- .env + .gitignore — secret management  
-- timeout=10 — enforced network safety rule  
-- pip freeze — deterministic builds  
-- pytest — validation testing framework  
-
----
-
-## Key Takeaways
-
-1. External APIs are never stable  
-   → normalize shape and fields  
-
-2. Pydantic enforces contracts  
-   → unsafe dict → validated object  
-
-3. HTTP is failure-prone  
-   → always timeout + handle exceptions  
-
-4. Config must be external  
-   → .env keeps secrets out of code  
-
-5. Architecture is layered  
-
-CLI
-→ HTTP client
-→ parser
-→ Pydantic model
-
-
----
-
-# Day 11 — Classes · Dataclasses · State Modeling · Typed Object Design
-
-**Week/Day:** Week 2, Day 4  
-**Topic:** Classes, instance variables, class variables, methods, dataclasses, object state, validation patterns
-
----
-
-## What I Built
-
-A production-style book modeling system implemented in two versions:
-- regular class (`Book`)
-- dataclass (`BookData`)
-
-The project demonstrates:
-- stateful object design
-- shared vs per-instance state
-- pure methods
-- dataclass validation
-- typed modeling
-- production-style testability
-
-week-2/day-4/
-├── src/
-│   └── books/
-│       ├── __init__.py
-│       ├── book_class.py
-│       ├── book_dataclass.py
-│       └── main.py
-└── tests/
-    └── test_books.py
-
----
-
-## Core Object Design
-
-### Regular Class — Book
-
-    class Book:
-        total_books: int = 0
-        LONG_BOOK_THRESHOLD: int = 300
-
-Purpose:
-- combines state + behavior
-- owns business logic
-- tracks shared system state
-
-Instance variables:
-
-    self.title
-    self.author
-    self.pages
-    self.year
-
-Shared class variables:
-
-    Book.total_books
-    Book.LONG_BOOK_THRESHOLD
-
-Key principle:
-- instance variables belong to one object
-- class variables belong to the class itself
-
----
-
-## __init__
-
-    def __init__(self, title, author, pages, year):
-
-Purpose:
-- initializes object state
-- attaches data to self
-- increments shared counter
-
-    Book.total_books += 1
-
-Key idea:
-- every new instance mutates shared class state
-
----
-
-## __str__
-
-    def __str__(self) -> str:
-        return f"{self.title} by {self.author} ({self.year})"
-
-Purpose:
-- human-readable object representation
-- automatic formatting during print()
-
-Rule:
-- return strings
-- never print inside __str__
-
----
-
-## is_long()
-
-    def is_long(self) -> bool:
-        return self.pages > Book.LONG_BOOK_THRESHOLD
-
-Purpose:
-- encapsulates business rule
-- avoids magic numbers
-
-Key idea:
-- behavior should live with the object that owns the data
-
----
-
-## get_age()
-
-    def get_age(self, current_year: int) -> int:
-        return current_year - self.year
-
-Purpose:
-- pure calculation
-- deterministic and testable
-
-Rule enforced:
-- never call datetime.now() inside domain logic
-- inject time as input
-
----
-
-## summary()
-
-    def summary(self) -> str:
-        return f"..."
-
-Purpose:
-- formatted structured output
-- presentation-safe helper method
-
----
-
-## Dataclass Version — BookData
-
-    @dataclass
-    class BookData:
-        title: str
-        author: str
-        pages: int
-        year: int
-
-Purpose:
-- lightweight structured data container
-- auto-generates:
-    - __init__
-    - __repr__
-    - __eq__
-
-Key idea:
-- use dataclass when object is mostly data
-
----
-
-## __post_init__
-
-    def __post_init__(self) -> None:
-        if self.pages <= 0:
-            raise ValueError(...)
-
-        if self.year < 1000:
-            raise ValueError(...)
-
-Purpose:
-- validation after dataclass initialization
-- prevents invalid object state
-
-Key principle:
-- invalid data should fail immediately
-
----
-
-## CLI Demonstration — main.py
-
-Demonstrated:
-- creating multiple Book objects
-- shared class variable behavior
-- dataclass auto-generated representation
-- method usage
-- object formatting
-
-Verified:
-- Book.total_books increments globally across instances
-
----
-
-## Failure Design
-
-user creates invalid object
-→ ValueError raised immediately
-
-shared state mutation
-→ tracked through class variable
-
-pure calculations
-→ deterministic and testable
-
-dataclass validation
-→ invalid state blocked at creation
-
----
-
-## Tests
-
-    test_str_format()
-    test_is_long()
-    test_get_age()
-    test_total_books()
-    test_invalid_pages()
-    test_invalid_year()
-
-Validated:
-- string formatting
-- long-book logic
-- age calculation
-- shared state behavior
-- validation guards
-
----
-
-## Tools Used
-
-- classes
-- dataclasses
-- instance variables
-- class variables
-- __init__
-- __str__
-- __post_init__
-- pytest
-- type hints
-- f-strings
-
----
-
-## Key Takeaways
-
-1. Classes model state + behavior together
-   → useful for agents, clients, workflows
-
-2. Dataclasses reduce boilerplate
-   → ideal for structured data containers
-
-3. Class variables are shared globally
-   → useful for counters and config
-
-4. Pure methods are easier to test
-   → inject dependencies instead of hardcoding
-
-5. Validation belongs near object creation
-   → fail fast on invalid state
-
-6. Architecture matters even in small systems
-
-CLI
-→ object model
-→ validation
-→ tests
+## Six AI-Specific Failure Modes — Read Before Week 3
+
+These failures don't throw errors. They fail invisibly.
+
+| Failure | What happens | Mitigation |
+|---|---|---|
+| **Prompt injection** | User input manipulates LLM behaviour | Input length limits, content filtering, never concatenate raw user input into system prompts |
+| **PII in the pipeline** | Real names and financials in logs create liability | Strip/mask before Claude calls and before logging |
+| **Embedding drift** | Changing embedding models makes old vectors incomparable | Re-index everything on model change, document which model produced the current index |
+| **Context poisoning** | Early bad outputs compound across agent steps | Validate LLM outputs between steps before feeding into state |
+| **Silent hallucination** | LLM is confidently wrong, high RAGAS score doesn't mean correct | Human spot-check 5–10 outputs after every system change |
+| **Latency spikes** | External calls hang under load | Timeout on every external call, degrade gracefully |
