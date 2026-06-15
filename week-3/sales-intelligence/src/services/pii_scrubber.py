@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 
-from src.models.schemas import GuardResult
+from models.schemas import GuardResult
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 PHONE_RE = re.compile(r"(\+1[-\s]?)?(\(?\d{3}\)?[-\s]?)\d{3}[-\s]?\d{4}")
 CARD_RE = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
 AMOUNT_RE = re.compile(r"\$\d{1,3}(?:,\d{3})*(?:\.\d+)?|\$\d+(?:\.\d+)?[MK]?")
-NAME_RE = re.compile(r"(?<!^)(?:\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b)")
+NAME_RE = re.compile(r"(?<!\w)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+")
 
 INJECTION_PATTERNS = [
     "ignore previous instructions",

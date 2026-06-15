@@ -8,7 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from src.api.routes import limiter, router
+from api.routes import limiter, router
 
 app = FastAPI(
     title="Sales Call Intelligence",

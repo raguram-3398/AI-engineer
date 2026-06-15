@@ -10,13 +10,13 @@ from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.models.schemas import StreamMetadata
-from src.services.analysis import analyse_streaming
-from src.services.cost_tracker import record_spend, calculate_whisper_cost
-from src.services.pii_scrubber import check_injection, scrub_pii
-from src.services.transcription import check_confidence, transcribe_audio
-from src.utils.exceptions import AnalysisError
-from src.utils.logger import get_logger, log_request
+from models.schemas import StreamMetadata
+from services.analysis import analyse_streaming
+from services.cost_tracker import record_spend, calculate_whisper_cost
+from services.pii_scrubber import check_injection, scrub_pii
+from services.transcription import check_confidence, transcribe_audio
+from utils.exceptions import AnalysisError
+from utils.logger import get_logger, log_request
 
 logger = get_logger(__name__)
 limiter = Limiter(key_func=get_remote_address)
@@ -46,7 +46,7 @@ def trim_transcript(transcript: str, max_tokens: int = 150000, char_per_token: f
         return transcript, False
     max_char = int(max_tokens * char_per_token)
     trimmed = transcript[:max_char].rstrip()
-    trimmed += "\n\n [Transcript Trimmed - original exceeded context budget]"
+    trimmed += "\n\n [Transcript trimmed - original exceeded context budget]"
     return trimmed, True
 
 def _prepare_transcript(raw_transcript: str, request_id: str) -> str:

@@ -6,8 +6,8 @@ import os
 from io import BytesIO
 from openai import AsyncOpenAI
 
-from src.models.schemas import TranscriptionResult, ConfidenceResult
-from src.utils.logger import get_logger
+from models.schemas import TranscriptionResult, ConfidenceResult
+from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -30,7 +30,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, request_id: str, o
             timeout=timeout
         )
     except asyncio.TimeoutError as e:
-        raise TimeoutError(f"whisper timed out after {timeout:.1f}s") from e
+        raise TimeoutError(f"Whisper timed out") from e
     duration = getattr(response, "duration", None)
     result = TranscriptionResult(transcript=response.text, duration_seconds=duration)
     logger.info(

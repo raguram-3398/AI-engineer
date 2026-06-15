@@ -8,9 +8,9 @@ import os
 from anthropic import AsyncAnthropic
 from pydantic import ValidationError
 
-from src.models.schemas import SalesCallAnalysis
-from src.utils.exceptions import AnalysisError
-from src.services.cost_tracker import calculate_claude_cost, record_spend
+from models.schemas import SalesCallAnalysis
+from utils.exceptions import AnalysisError
+from services.cost_tracker import calculate_claude_cost, record_spend
 
 _MODEL = "claude-sonnet-4-20250514"
 
@@ -18,6 +18,7 @@ PROMPT_REGISTRY: dict[str, dict[str, str]] = {
     "v1": {
         "system": (
             "You are an expert sales analyst.\n"
+            "Return ONLY valid JSON."
             "Analyse the provided sales call transcript and return:\n"
             "1. Executive summary\n"
             "2. Key objections raised by the customer\n"
