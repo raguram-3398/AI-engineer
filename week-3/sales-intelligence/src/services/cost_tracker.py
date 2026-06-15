@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from src.utils.logger import get_logger
+from utils.logger import get_logger
 
 WHISPER_COST_PER_MINUTE: float = 0.006
 CLAUDE_INPUT_COST_PER_TOKEN: float = 3.0 / 1_000_000
@@ -20,6 +20,8 @@ def calculate_claude_cost(input_tokens: int, output_tokens: int) -> tuple[float,
 
 def calculate_whisper_cost(duration_seconds: float) -> float:
     """Return Whisper cost in USD billed in whole minutes; returns 0.0 if duration unknown."""
+    if duration_seconds is None:
+        return 0.0
     billed_minutes = math.ceil(duration_seconds / 60)
     return billed_minutes * WHISPER_COST_PER_MINUTE
 
