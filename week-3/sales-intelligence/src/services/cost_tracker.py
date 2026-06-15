@@ -1,61 +1,52 @@
 from __future__ import annotations
 
-import asyncio
-import logging
 import math
 
+from src.utils.logger import get_logger
 
-from anthropic import AsyncAnthropic
-from src.models.schemas import CostRecord
-
-client = AsyncAnthropic()
-
-whisper_cost_per_minute: float = 0.006
-claude_input_cost_per_token: float = 3.0 / 1_000_000
-claude_output_cost_per_token: float = 15.0 / 1_000_000
-daily_spend_alert_threshold: float = 1.0
+WHISPER_COST_PER_MINUTE: float = 0.006
+CLAUDE_INPUT_COST_PER_TOKEN: float = 3.0 / 1_000_000
+CLAUDE_OUTPUT_COST_PER_TOKEN: float = 15.0 / 1_000_000
+DAILY_SPEND_ALERT_THRESHOLD: float = 1.0
+# Resets on process restart — in production persist to Database
 _daily_spend: float = 0.0
+_threshold_alerted: bool = False
 
-logger = logging.getLogger(__name__)
-
-async def count_tokens(messages: list[dict[str, str]], system: str, model: str = "claude-sonnet-4") -> int:
-    try:
-        response = await asyncio.wait_for(
-            client.messages.count_tokens(
-                model=model,
-                messages=messages,
-                system=system,
-            ),
-            timeout = 10.0,
-        )
-        return response.input_tokens
-    except asyncio.TimeoutError:
-        raise TimeoutError("Token counting request timed out")
-
-def trim_transcript(transcript: str, max_tokens: int = 150000, char_per_token: float = 4.0) -> tuple[str, bool]:
-    estimated_tokens = len(transcript) / char_per_token
-    if estimated_tokens <= max_tokens:
-        return transcript, False
-    max_char = int(max_tokens * char_per_token)
-    trimmed = transcript[:max_char].rstrip()
-    trimmed += "\n\n [Transcript Trimmed - original exceeded context budget]"
-    return trimmed, True
+logger = get_logger(__name__)
 
 def calculate_claude_cost(input_tokens: int, output_tokens: int) -> tuple[float, float]:
-    input_cost = input_tokens * claude_input_cost_per_token
-    output_cost = output_tokens * claude_output_cost_per_token
-    return input_cost, output_cost
+    """Convert Claude input/output token counts to USD costs; returns (input_cost, output_cost)."""
+    return (input_tokens * CLAUDE_INPUT_COST_PER_TOKEN, output_tokens * CLAUDE_OUTPUT_COST_PER_TOKEN)
 
 def calculate_whisper_cost(duration_seconds: float) -> float:
+    """Return Whisper cost in USD billed in whole minutes; returns 0.0 if duration unknown."""
     billed_minutes = math.ceil(duration_seconds / 60)
-    return billed_minutes * whisper_cost_per_minute
+    return billed_minutes * WHISPER_COST_PER_MINUTE
 
-def check_daily_spend(current_spend: float, threshold: float = daily_spend_alert_threshold) -> bool:
-    return current_spend >= threshold
-
-def record_spend(amount: float) -> float:
-    global _daily_spend
+def record_spend(amount: float, request_id: str) -> float:
+    """Accumulate spend against the daily total, log every call, and warn once when threshold crossed."""
+    global _daily_spend, _threshold_alerted
     _daily_spend += amount
-    if check_daily_spend(_daily_spend):
-        logger.warning("Daily threshold exceeded",)
+    logger.info(
+        "cost_recorded",
+        extra={
+            "extra_fields": {
+                "request_id": request_id,
+                "amount_usd": round(amount, 6),
+                "daily_total_usd": round(_daily_spend, 6),
+            }
+        },
+    )
+    if _daily_spend >= DAILY_SPEND_ALERT_THRESHOLD and not _threshold_alerted:
+        _threshold_alerted = True
+        logger.warning(
+            "daily_spend_threshold_exceeded",
+            extra={
+                "extra_fields": {
+                    "daily_spend_usd": round(_daily_spend, 6),
+                    "threshold_usd": DAILY_SPEND_ALERT_THRESHOLD,
+                    "request_id": request_id,
+                }
+            },
+        )
     return _daily_spend

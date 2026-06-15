@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sales-intelligence"
+version = "1.0.0"
+description = "AI Sales Call Intelligence — Whisper transcription + Claude analysis"
+requires-python = ">=3.12"
+
+dependencies = [
+    # API
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",   # required by FastAPI for UploadFile
+    "slowapi>=0.1.9",            # rate limiting
+
+    # AI clients
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",            # Whisper transcription
+
+    # Data validation
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.0.0",  # settings management via env vars
+
+    # Streaming JSON parsing
+    "partial-json-parser>=0.2.1", # progressive field rendering in Streamlit
+
+    # Streamlit dashboard
+    "streamlit>=1.38.0",
+    "requests>=2.32.0",
+
+    # Config
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.0",
+    "black>=24.0.0",
+    "mypy>=1.10.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra -q"
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]   # pycodestyle, pyflakes, isort, pyupgrade
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+strict = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true

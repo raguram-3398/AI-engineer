@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import re
 
-from collections import Counter
 from src.models.schemas import GuardResult
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -18,6 +19,7 @@ INJECTION_PATTERNS = [
 ]
 
 def scrub_pii(transcript: str) -> str:
+    """Replace emails, phones, card numbers, financial amounts, and names with typed placeholders."""
     transcript = EMAIL_RE.sub("[EMAIL]", transcript)
     transcript = PHONE_RE.sub("[PHONE]", transcript)
     transcript = CARD_RE.sub("[CARD]", transcript)
@@ -25,7 +27,8 @@ def scrub_pii(transcript: str) -> str:
     transcript = NAME_RE.sub("[NAME]", transcript)
     return transcript
 
-def scrubbed_entities(scrubbed: str) -> dict[str, int]:
+def count_scrubbed_entities(scrubbed: str) -> dict[str, int]:
+    """Count each placeholder type in an already-scrubbed string; used for README metrics."""
     return {
         "EMAIL": scrubbed.count("[EMAIL]"),
         "PHONE": scrubbed.count("[PHONE]"),
@@ -35,6 +38,7 @@ def scrubbed_entities(scrubbed: str) -> dict[str, int]:
     }
 
 def check_injection(text: str, max_length: int = 8192) -> GuardResult:
+    """Reject input that exceeds length limit or matches known prompt injection patterns."""
     if len(text) > max_length:
         return GuardResult(is_safe=False, reason="Input exceeds maximum length",)
     lower = text.lower()
