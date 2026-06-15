@@ -34,12 +34,6 @@ async def _fake_transcribe(**kwargs):
     return MOCK_TRANSCRIPTION
 
 
-async def _fake_analyse(queue, **kwargs):
-    """Push None sentinel immediately — simulates analysis completing."""
-    await kwargs["token_queue"].put(None)
-    return VALID_ANALYSIS, 0.001, 0.002
-
-
 # ---------------------------------------------------------------------------
 # File validation — one test per rejection rule
 # ---------------------------------------------------------------------------
