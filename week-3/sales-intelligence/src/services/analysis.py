@@ -1,18 +1,18 @@
 from __future__ import annotations
-from collections.abc import AsyncGenerator
 
 import asyncio
 import json
 import re
+import os
 
-from pydantic import ValidationError
 from anthropic import AsyncAnthropic
+from pydantic import ValidationError
 
 from src.models.schemas import SalesCallAnalysis
 from src.utils.exceptions import AnalysisError
 from src.services.cost_tracker import calculate_claude_cost, record_spend
 
-client = AsyncAnthropic()
+_MODEL = "claude-sonnet-4-20250514"
 
 PROMPT_REGISTRY: dict[str, dict[str, str]] = {
     "v1": {
@@ -25,137 +25,109 @@ PROMPT_REGISTRY: dict[str, dict[str, str]] = {
             "4. Overall sentiment (Positive, Neutral or Negative)\n\n"
             "Be concise, accurate and fact-based."
         ),
-        "user": (
-            "Analyse the following sales call transcript:\n\n"
-            "{transcript}"
-        ),
-    }
+        "user": "Analyse the following sales call transcript:\n\n{transcript}",
+    },
 }
 
 def get_prompt(version: str) -> dict[str, str]:
-    """Retrives a prompt version from the PROMPT_REGISTRY"""
+    """Look up a prompt version from PROMPT_REGISTRY; raises KeyError on unknown version."""
     try:
         return PROMPT_REGISTRY[version]
     except KeyError as e:
-        raise KeyError(f"Prompt version {version} does not exist.") from e
+        raise KeyError(f"Prompt version '{version}' does not exist.") from e
     
-async def call_claude(prompt_version: str, transcript: str, timeout: float = 30.0) -> str:
-    """Send a transcript to claude and returns the raw response text"""
-    prompt = get_prompt(prompt_version)
-    user_content = prompt["user"].format(transcript = transcript)
-    try:
-        response = await asyncio.wait_for(
-            client.messages.create(
-                model="claude-sonnet-4",
-                max_tokens=2048,
-                system=prompt["system"],
-                messages=[
-                    {
-                        "role": "user",
-                        "content" : user_content,
-                    }
-                ],
-            ),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError as e:
-        raise TimeoutError(f"Claude timed out for prompt '{prompt_version}'.") from e
-    return response.content[0].text
-
-async def call_claude_raw(system: str, user_content: str, timeout: float = 30.0) -> str:
-    """Send a retry transcript to claude and returns the raw response text"""
-    try:
-        response = await asyncio.wait_for(
-            client.messages.create(
-                model="claude-sonnet-4",
-                max_tokens=2048,
-                system=system,
-                messages=[
-                    {
-                         "role": "user",
-                          "content": user_content,
-                    }
-                ],
-            ),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError as e:
-        raise TimeoutError("Claude timed out for retry.") from e
-    return response.content[0].text
-
 def extract_json(raw: str) -> str:
-    """Removes markdown fences from claude output"""
+    """Strip markdown code fences from a Claude response before JSON parsing."""
     raw = raw.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
     return raw.strip()
 
-async def analyse_with_retry(transcript: str, prompt_version: str = "v1", max_attempts: int = 3) -> SalesCallAnalysis:
-    """Returns sales call analysis with retry for errors"""
-    original_transcript = transcript
-    last_error = ""
-    prompt = get_prompt(prompt_version)
-    raw = ""
-    for attempt in range(1, max_attempts + 1):
-        if attempt == 1:
-            raw = await call_claude(prompt_version, original_transcript)
-        else:
-            correction_prompt = f"""
-You are correcting a structured analysis output.
+def _get_client(api_key: str | None) -> AsyncAnthropic:
+    """Returns AsyncAnthropic from user key or env fallback"""
+    return AsyncAnthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
 
-TASK:
-Return valid JSON matching the required schema.
-
-ORIGINAL TRANSCRIPT:
-{original_transcript}
-
-YOUR PREVIOUS RESPONSE:
-{raw}
-
-ERROR:
-{last_error}
-
-RULES:
-- Output ONLY valid JSON
-- Must match schema exactly
-- sentiment must be: Positive | Neutral | Negative
-- No markdown, no code fences
-"""
-            raw = await call_claude_raw(system=prompt["system"], user_content=correction_prompt)
-        cleaned = extract_json(raw)
-        try:
-            data = json.loads(cleaned)
-            return SalesCallAnalysis.model_validate(data)
-        except(json.JSONDecodeError, ValidationError) as e:
-            last_error = str(e)
-            if attempt == max_attempts:
-                raise AnalysisError(message=f"failed after {max_attempts} attempts", attempts=max_attempts, last_error=last_error,)
-
-
-async def stream_analysis(transcript: str, prompt_version: str = "v1", timeout: float = 30.0,) -> AsyncGenerator[str, None]:
-    prompt = get_prompt(prompt_version)
+async def _call_claude(client: AsyncAnthropic, system: str, user_content: str,token_queue: asyncio.Queue[str | None] | None = None, timeout: float = 60.0,) -> tuple[str, int, int]:
+    """Stream a single Claude call; push tokens onto token_queue if provided, else collect silently.
+    
+    # Design note: one function handles both attempt 1 (token_queue supplied → tokens forwarded
+    # live to the HTTP client) and retries (token_queue=None → tokens collected but not forwarded).
+    # Always streams internally so usage stats are captured identically on every attempt.
+    # None sentinel pushed in finally so the queue consumer in _analyse_stream always terminates.
+    """
+    collected: list[str] = []
     message = None
     try:
         async with asyncio.timeout(timeout):
             async with client.messages.stream(
-                model="claude-sonnet-4-5",
-                max_tokens=4096,
-                system=prompt["system"],
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt["user"].format(transcript=transcript),
-                    }   
-                ],
+                model=_MODEL,
+                max_tokens=2048,
+                system=system,
+                messages=[{"role": "user", "content": user_content}],
             ) as stream:
                 async for chunk in stream.text_stream:
-                    yield chunk
-            message = await stream.get_final_message()
+                    collected.append(chunk)
+                    if token_queue is not None:
+                        await token_queue.put(chunk)
+                message = await stream.get_final_message()
+    except TimeoutError as e:
+        raise TimeoutError("claude timed out") from e
     finally:
-            if message is not None:
-                input_cost, output_cost = calculate_claude_cost(
-                    input_tokens=message.usage.input_tokens,
-                    output_tokens=message.usage.output_tokens,
-                )
-                record_spend(input_cost + output_cost)
+        if token_queue is not None:
+            await token_queue.put(None)
+    return ("".join(collected), message.usage.input_tokens if message else 0, message.usage.output_tokens if message else 0)
+
+async def analyse_streaming(transcript: str, request_id: str, token_queue: asyncio.Queue[str | None], prompt_version: str = "v1", max_attempts: int = 3, anthropic_api_key: str | None = None,) -> tuple[SalesCallAnalysis, float, float]:
+    """Stream attempt 1 live; validate collected JSON; retry up to max_attempts with error-fed correction prompt.
+    
+    # Design note: attempt 1 streams tokens onto token_queue so Streamlit can render fields
+    # progressively via partial_json_parser. Retries are silent (token_queue=None) — Streamlit
+    # clears and re-renders from the validated __META__ sentinel on completion.
+    # Cost is recorded once on success, accumulating tokens across all attempts.
+    """
+    client = _get_client(anthropic_api_key)
+    prompt = get_prompt(prompt_version)
+    raw = ""
+    last_error = ""
+    total_input_tokens = 0
+    total_output_tokens = 0
+    for attempt in range(1, max_attempts +1):
+        if attempt == 1:
+            user_content = prompt["user"].format(transcript=transcript)
+            raw, in_tok, out_tok = await _call_claude(
+                client=client,
+                system=prompt["system"],
+                user_content=user_content,
+                token_queue=token_queue,
+            )
+        else:
+            user_content = (
+                "You are correcting a structured analysis output.\n\n"
+                "TASK:\nReturn valid JSON matching the required schema.\n\n"
+                f"ORIGINAL TRANSCRIPT:\n{transcript}\n\n"
+                f"YOUR PREVIOUS RESPONSE:\n{raw}\n\n"
+                f"ERROR:\n{last_error}\n\n"
+                "RULES:\n"
+                "- Output ONLY valid JSON\n"
+                "- Must match schema exactly\n"
+                "- sentiment must be: Positive | Neutral | Negative\n"
+                "- No markdown, no code fences"
+            )
+            raw, in_tok, out_tok = await _call_claude(
+                client=client,
+                system=prompt["system"],
+                user_content=user_content,
+                token_queue=None,
+            )
+        total_input_tokens += in_tok
+        total_output_tokens += out_tok
+        cleaned = extract_json(raw)
+        try:
+            result = SalesCallAnalysis.model_validate(json.loads(cleaned))
+            input_cost, output_cost = calculate_claude_cost(total_input_tokens, total_output_tokens)
+            record_spend(input_cost + output_cost, request_id=request_id)
+            return result, input_cost, output_cost
+        except (json.JSONDecodeError, ValidationError) as e:
+            last_error = str(e)
+    raise AnalysisError(message=f"Analysis failed after {max_attempts} attempts", attempts=max_attempts, last_error=last_error,)

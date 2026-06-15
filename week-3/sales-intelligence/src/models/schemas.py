@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from pydantic import BaseModel, Field
 from typing import Literal
+
+from pydantic import BaseModel, Field
 
 class SalesCallAnalysis(BaseModel):
     summary: str = Field(description="Executive summary of the sales call")
@@ -8,7 +11,7 @@ class SalesCallAnalysis(BaseModel):
     action_items: list[str] = Field(description="Follow-up actions for the sales team")
     sentiment: Literal["Positive", "Neutral", "Negative"] = Field(description="Overall sentiment of the sales call")
 
-class AnalysisResponse(BaseModel):
+class StreamMetadata(BaseModel):
     request_id: str
     transcript: str
     analysis: SalesCallAnalysis
@@ -32,11 +35,3 @@ class ConfidenceResult:
 class GuardResult:
     is_safe: bool
     reason: str | None
-
-@dataclass(slots=True)
-class CostRecord:
-    request_id: str
-    whisper_cost: float
-    claude_input_cost: float
-    claude_output_cost: float
-    total_cost: float
