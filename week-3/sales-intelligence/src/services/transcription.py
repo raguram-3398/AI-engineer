@@ -11,11 +11,19 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 def _get_client(api_key: str | None) -> AsyncOpenAI:
     """Returns AsyncAnthropic fron user key or env fallback"""
     return AsyncOpenAI(api_key=api_key or os.environ["OPENAI_API_KEY"])
 
-async def transcribe_audio(audio_bytes: bytes, filename: str, request_id: str, openai_api_key: str | None = None, timeout: float = 60.0) -> TranscriptionResult:
+
+async def transcribe_audio(
+    audio_bytes: bytes,
+    filename: str,
+    request_id: str,
+    openai_api_key: str | None = None,
+    timeout: float = 60.0,
+) -> TranscriptionResult:
     """Transcribe audio via Whisper using verbose_json to capture duration for cost tracking."""
     client = _get_client(openai_api_key)
     file_obj = BytesIO(audio_bytes)
@@ -27,10 +35,10 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, request_id: str, o
                 file=file_obj,
                 response_format="verbose_json",
             ),
-            timeout=timeout
+            timeout=timeout,
         )
     except asyncio.TimeoutError as e:
-        raise TimeoutError(f"Whisper timed out") from e
+        raise TimeoutError("Whisper timed out") from e
     duration = getattr(response, "duration", None)
     result = TranscriptionResult(transcript=response.text, duration_seconds=duration)
     logger.info(
@@ -45,16 +53,30 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, request_id: str, o
     )
     return result
 
-def check_confidence(transcript: str, request_id: str = "", wer_threshold: float = 0.3) -> ConfidenceResult:
+
+def check_confidence(
+    transcript: str, request_id: str = "", wer_threshold: float = 0.3
+) -> ConfidenceResult:
     """Flag transcript as low-confidence if consecutive repeated words exceed the WER threshold."""
     words = transcript.split()
     repeated = 0
     for current, nxt in zip(words, words[1:]):
-        if current==nxt:
+        if current == nxt:
             repeated += 1
     limit = wer_threshold * len(words)
     if repeated > limit:
         msg = f"Transcript contains {repeated} consecutive repeated words"
-        logger.warning("low_confidence_transcript", extra={"extra_fields": {"request_id": request_id, "repeated_words": repeated}},)
-        return ConfidenceResult(is_low_confidence=True, flag_message=msg,)
-    return ConfidenceResult(is_low_confidence=False, flag_message=None,)
+        logger.warning(
+            "low_confidence_transcript",
+            extra={
+                "extra_fields": {"request_id": request_id, "repeated_words": repeated}
+            },
+        )
+        return ConfidenceResult(
+            is_low_confidence=True,
+            flag_message=msg,
+        )
+    return ConfidenceResult(
+        is_low_confidence=False,
+        flag_message=None,
+    )

@@ -24,22 +24,42 @@ router = APIRouter()
 
 _MAX_FILE_SIZE = 25 * 1024 * 1024
 _ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".mp4", ".wav", ".m4a"})
-_ALLOWED_MIME_TYPES: frozenset[str] = frozenset({
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
-    "audio/mp4", "audio/x-m4a", "audio/m4a",
-})
+_ALLOWED_MIME_TYPES: frozenset[str] = frozenset(
+    {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/m4a",
+    }
+)
 
-def _validate_audio_file(audio_file:UploadFile, audio_bytes: bytes) -> None:
+
+def _validate_audio_file(audio_file: UploadFile, audio_bytes: bytes) -> None:
     """Reject unsupported file extensions, MIME types, and files over 25 MB before any external call."""
     suffix = Path(audio_file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=422, detail=f"Unsupported audio format. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported audio format. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
+        )
     if audio_file.content_type not in _ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=422, detail="unsupported MIME type.",)
+        raise HTTPException(
+            status_code=422,
+            detail="unsupported MIME type.",
+        )
     if len(audio_bytes) > _MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File exceeds 25MB limit",)
-    
-def trim_transcript(transcript: str, max_tokens: int = 150000, char_per_token: float = 4.0) -> tuple[str, bool]:
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds 25MB limit",
+        )
+
+
+def trim_transcript(
+    transcript: str, max_tokens: int = 150000, char_per_token: float = 4.0
+) -> tuple[str, bool]:
     """Trim transcript to fit within the 150K token context budget; returns (text, was_trimmed)."""
     estimated_tokens = len(transcript) / char_per_token
     if estimated_tokens <= max_tokens:
@@ -48,6 +68,7 @@ def trim_transcript(transcript: str, max_tokens: int = 150000, char_per_token: f
     trimmed = transcript[:max_char].rstrip()
     trimmed += "\n\n [Transcript trimmed - original exceeded context budget]"
     return trimmed, True
+
 
 def _prepare_transcript(raw_transcript: str, request_id: str) -> str:
     """Run injection check → PII scrub → context trim on the raw transcript; raises HTTPException on guard failure."""
@@ -60,9 +81,17 @@ def _prepare_transcript(raw_transcript: str, request_id: str) -> str:
         log_request(logger, request_id, "transcript_trimmed")
     return trimmed
 
-async def _analyse_stream(transcript: str, request_id: str, whisper_cost: float, low_confidence: bool, confidence_message: str | None, anthropic_api_key: str | None,) -> AsyncGenerator[str, None]:
+
+async def _analyse_stream(
+    transcript: str,
+    request_id: str,
+    whisper_cost: float,
+    low_confidence: bool,
+    confidence_message: str | None,
+    anthropic_api_key: str | None,
+) -> AsyncGenerator[str, None]:
     """Orchestrate the full analysis pipeline as an async generator feeding a StreamingResponse.
-    
+
     # Design note: asyncio.Queue decouples the producer (analyse_streaming background task)
     # from this consumer generator. Tokens flow to the HTTP client as they arrive.
     # After the queue drains, the validated result is awaited and emitted as a __META__ sentinel
@@ -103,24 +132,39 @@ async def _analyse_stream(transcript: str, request_id: str, whisper_cost: float,
         total_cost=total_cost,
     )
     yield f"__META__:{metadata.model_dump_json()}\n"
-    log_request(logger, request_id, "analyse_request_complete", total_cost=round(total_cost, 6))
+    log_request(
+        logger, request_id, "analyse_request_complete", total_cost=round(total_cost, 6)
+    )
+
 
 @router.post("/analyse")
 @limiter.limit("10/minute")
-async def analyze_call(request: Request, audio_file: UploadFile, x_anthropic_key: str | None = Header(default=None), x_openai_key: str | None = Header(default=None)) -> StreamingResponse:
+async def analyze_call(
+    request: Request,
+    audio_file: UploadFile,
+    x_anthropic_key: str | None = Header(default=None),
+    x_openai_key: str | None = Header(default=None),
+) -> StreamingResponse:
     """Accept audio upload, run the full pipeline, and return a streaming SSE response.
-    
+
     # Design note: request: Request is required by slowapi's @limiter.limit decorator
     # to extract client IP via get_remote_address — it is not used directly in the function body.
     # Whisper cost is recorded here immediately after transcription; Claude cost is recorded
     # inside analyse_streaming on validation success. Both feed the same daily accumulator.
     """
     request_id = str(uuid.uuid4())
-    log_request(logger, request_id, "analyse_request_received", filename=audio_file.filename)
+    log_request(
+        logger, request_id, "analyse_request_received", filename=audio_file.filename
+    )
     audio_bytes = await audio_file.read()
     _validate_audio_file(audio_file, audio_bytes)
     try:
-        transcription = await transcribe_audio(audio_bytes=audio_bytes, filename=audio_file.filename or "audio", request_id=request_id, open_api_key=x_openai_key)
+        transcription = await transcribe_audio(
+            audio_bytes=audio_bytes,
+            filename=audio_file.filename or "audio",
+            request_id=request_id,
+            open_api_key=x_openai_key,
+        )
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
     except TimeoutError as e:

@@ -10,29 +10,43 @@ from partial_json_parser import loads as partial_loads, Allow
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 
-st.set_page_config(page_title="Sales Call Intelligence", layout="wide",)
+st.set_page_config(
+    page_title="Sales Call Intelligence",
+    layout="wide",
+)
 st.title("Sales Call Intelligence")
 with st.sidebar:
     st.header("API Keys")
-    anthropic_key = st.text_input("Anthropic API Key", type="password", placeholder="sk-ant-...")
+    anthropic_key = st.text_input(
+        "Anthropic API Key", type="password", placeholder="sk-ant-..."
+    )
     openai_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...")
     st.caption("keys are sent as request headers and are not logged or persisted")
 if "metadata" not in st.session_state:
     st.session_state.metadata = None
-uploaded_file = st.file_uploader("Upload a sales call recording", type=["mp3", "mp4", "wav", "m4a"])
+uploaded_file = st.file_uploader(
+    "Upload a sales call recording", type=["mp3", "mp4", "wav", "m4a"]
+)
+
 
 def _auth_headers() -> dict[str, str]:
     """Build X-Anthropic-Key / X-OpenAI-Key headers from sidebar inputs; omits keys if blank."""
-    headers: dict[str,str] = {}
+    headers: dict[str, str] = {}
     if anthropic_key:
         headers["X-Anthropic-Key"] = anthropic_key
     if openai_key:
         headers["X-OpenAI-Key"] = openai_key
     return headers
 
-def _render_analysis(placeholders: dict, analysis: dict, low_confidence: bool, confidence_message: str | None,) -> None:
+
+def _render_analysis(
+    placeholders: dict,
+    analysis: dict,
+    low_confidence: bool,
+    confidence_message: str | None,
+) -> None:
     """Write current analysis fields into st.empty() placeholders; safe to call repeatedly as fields arrive.
-    
+
     # Design note: called progressively during streaming with partial data, then once more
     # from __META__ with the final validated SalesCallAnalysis. _clear_placeholders() is called
     # before the final render so any partial or invalid content from attempt 1 is replaced cleanly.
@@ -44,22 +58,28 @@ def _render_analysis(placeholders: dict, analysis: dict, low_confidence: bool, c
         placeholders["summary"].markdown(f"**Summary**\n\n{summary}")
     objections = analysis.get("objections", [])
     if objections:
-        placeholders["objections"].markdown("**Objections**\n\n" + "\n".join(f"• {o}" for o in objections))
+        placeholders["objections"].markdown(
+            "**Objections**\n\n" + "\n".join(f"• {o}" for o in objections)
+        )
     action_items = analysis.get("action_items", [])
     if action_items:
-        placeholders["action_items"].markdown("**Action_Items**\n\n" + "\n".join(f"• {a}" for a in action_items))
+        placeholders["action_items"].markdown(
+            "**Action_Items**\n\n" + "\n".join(f"• {a}" for a in action_items)
+        )
     sentiment = analysis.get("sentiment", "")
     if sentiment:
         placeholders["sentiment"].markdown(f"**Sentiment**\n\n{sentiment}")
+
 
 def _clear_placeholders(placeholders: dict) -> None:
     """Clear all five st.empty() placeholders; called before re-rendering the validated retry result."""
     for ph in placeholders.values():
         ph.empty()
 
+
 def _stream_and_render(file) -> dict:
     """POST audio, consume SSE stream, progressively render fields via partial_json_parser, return metadata.
-    
+
     # Design note: partial_json_parser.loads(buffer, Allow.ALL) parses incomplete JSON on every
     # chunk — the same pattern used by Claude.ai, ChatGPT, and Gemini to render structured UI
     # fields progressively as tokens arrive. last_rendered guards against redundant re-renders.
@@ -69,11 +89,11 @@ def _stream_and_render(file) -> dict:
     file.seek(0)
     files = {"audio_file": (file.name, file, file.type)}
     placeholders = {
-        "confidence":   st.empty(),
-        "summary":      st.empty(),
-        "objections":   st.empty(),
+        "confidence": st.empty(),
+        "summary": st.empty(),
+        "objections": st.empty(),
         "action_items": st.empty(),
-        "sentiment":    st.empty(),
+        "sentiment": st.empty(),
     }
     buffer = ""
     metadata: dict = {}
@@ -90,10 +110,15 @@ def _stream_and_render(file) -> dict:
             if not chunk:
                 continue
             if chunk.startswith("__META__:"):
-                metadata = json.loads(chunk[len("__META__:"):].strip())
+                metadata = json.loads(chunk[len("__META__:") :].strip())
                 analysis = metadata.get("analysis", {})
                 _clear_placeholders(placeholders)
-                _render_analysis(placeholders, analysis, metadata.get("low_confidence", False), metadata.get("confidence_message", ""),)
+                _render_analysis(
+                    placeholders,
+                    analysis,
+                    metadata.get("low_confidence", False),
+                    metadata.get("confidence_message", ""),
+                )
                 continue
             buffer += chunk
             try:
@@ -107,6 +132,7 @@ def _stream_and_render(file) -> dict:
             except Exception:
                 pass
     return metadata
+
 
 if st.button("Analyse"):
     if uploaded_file is None:
