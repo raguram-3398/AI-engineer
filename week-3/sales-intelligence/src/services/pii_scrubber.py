@@ -18,6 +18,7 @@ INJECTION_PATTERNS = [
     "forget everything",
 ]
 
+
 def scrub_pii(transcript: str) -> str:
     """Replace emails, phones, card numbers, financial amounts, and names with typed placeholders."""
     transcript = EMAIL_RE.sub("[EMAIL]", transcript)
@@ -26,6 +27,7 @@ def scrub_pii(transcript: str) -> str:
     transcript = AMOUNT_RE.sub("[AMOUNT]", transcript)
     transcript = NAME_RE.sub("[NAME]", transcript)
     return transcript
+
 
 def count_scrubbed_entities(scrubbed: str) -> dict[str, int]:
     """Count each placeholder type in an already-scrubbed string; used for README metrics."""
@@ -37,12 +39,22 @@ def count_scrubbed_entities(scrubbed: str) -> dict[str, int]:
         "NAME": scrubbed.count("[NAME]"),
     }
 
+
 def check_injection(text: str, max_length: int = 8192) -> GuardResult:
     """Reject input that exceeds length limit or matches known prompt injection patterns."""
     if len(text) > max_length:
-        return GuardResult(is_safe=False, reason="Input exceeds maximum length",)
+        return GuardResult(
+            is_safe=False,
+            reason="Input exceeds maximum length",
+        )
     lower = text.lower()
     for pattern in INJECTION_PATTERNS:
         if pattern in lower:
-            return GuardResult(is_safe=False, reason="Potential prompt injection detected",)
-    return GuardResult(is_safe=True, reason=None,)
+            return GuardResult(
+                is_safe=False,
+                reason="Potential prompt injection detected",
+            )
+    return GuardResult(
+        is_safe=True,
+        reason=None,
+    )

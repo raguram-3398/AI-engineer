@@ -7,26 +7,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from models.schemas import SalesCallAnalysis
-from services.analysis import PROMPT_REGISTRY, extract_json, analyse_streaming, get_prompt
+from services.analysis import (
+    PROMPT_REGISTRY,
+    extract_json,
+    analyse_streaming,
+    get_prompt,
+)
 from utils.exceptions import AnalysisError
 
 # ---------------------------------------------------------------------------
 # Shared test data
 # ---------------------------------------------------------------------------
 
-VALID_JSON = json.dumps({
-    "summary": "Good call.",
-    "objections": ["Price too high"],
-    "action_items": ["Send proposal"],
-    "sentiment": "Positive",
-})
+VALID_JSON = json.dumps(
+    {
+        "summary": "Good call.",
+        "objections": ["Price too high"],
+        "action_items": ["Send proposal"],
+        "sentiment": "Positive",
+    }
+)
 
 INVALID_JSON = "not json at all"
 
-WRONG_SCHEMA_JSON = json.dumps({
-    "summary": "Good call.", "objections": [], "action_items": [],
-    "sentiment": "Happy",  # invalid Literal — triggers Pydantic retry
-})
+WRONG_SCHEMA_JSON = json.dumps(
+    {
+        "summary": "Good call.",
+        "objections": [],
+        "action_items": [],
+        "sentiment": "Happy",  # invalid Literal — triggers Pydantic retry
+    }
+)
 
 
 def _make_stream(text: str):
@@ -54,6 +65,7 @@ def _make_stream(text: str):
 # Prompt registry — baseline regression
 # ---------------------------------------------------------------------------
 
+
 def test_prompt_registry_v1_baseline():
     """v1 must exist and contain the JSON-only instruction — regression guard."""
     prompt = get_prompt("v1")
@@ -69,6 +81,7 @@ def test_get_prompt_unknown_raises():
 # _extract_json
 # ---------------------------------------------------------------------------
 
+
 def test_extract_json_strips_markdown_fence():
     """Markdown code fences must be stripped before JSON parsing."""
     assert extract_json('```json\n{"k": "v"}\n```') == '{"k": "v"}'
@@ -78,6 +91,7 @@ def test_extract_json_strips_markdown_fence():
 # analyse_streaming — happy path + tokens on queue
 # ---------------------------------------------------------------------------
 
+
 async def test_analyse_streaming_happy_path_and_tokens():
     """Valid JSON → SalesCallAnalysis returned; tokens pushed onto queue."""
     mock_client = _make_stream(VALID_JSON)
@@ -86,8 +100,10 @@ async def test_analyse_streaming_happy_path_and_tokens():
     with patch("services.analysis._get_client", return_value=mock_client):
         with patch("services.analysis.record_spend"):
             result, _, _ = await analyse_streaming(
-                transcript="Test", request_id="req-1",
-                token_queue=queue, anthropic_api_key="sk-test",
+                transcript="Test",
+                request_id="req-1",
+                token_queue=queue,
+                anthropic_api_key="sk-test",
             )
 
     assert isinstance(result, SalesCallAnalysis)
@@ -106,8 +122,10 @@ async def test_analyse_streaming_happy_path_and_tokens():
 # analyse_streaming — retry on invalid then valid
 # ---------------------------------------------------------------------------
 
+
 async def test_analyse_streaming_retries_and_succeeds():
     """Attempt 1 invalid JSON → attempt 2 valid JSON → success on 2nd call."""
+
     def _make_stream_for(text):
         msg = MagicMock()
         msg.usage.input_tokens = 100
@@ -127,7 +145,7 @@ async def test_analyse_streaming_retries_and_succeeds():
     mock_client = MagicMock()
     mock_client.messages.stream.side_effect = [
         _make_stream_for(WRONG_SCHEMA_JSON),  # attempt 1 — wrong schema
-        _make_stream_for(VALID_JSON),         # attempt 2 — correct
+        _make_stream_for(VALID_JSON),  # attempt 2 — correct
     ]
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
@@ -135,8 +153,10 @@ async def test_analyse_streaming_retries_and_succeeds():
     with patch("services.analysis._get_client", return_value=mock_client):
         with patch("services.analysis.record_spend"):
             result, _, _ = await analyse_streaming(
-                transcript="Test", request_id="req-1",
-                token_queue=queue, anthropic_api_key="sk-test",
+                transcript="Test",
+                request_id="req-1",
+                token_queue=queue,
+                anthropic_api_key="sk-test",
             )
 
     assert result.sentiment == "Positive"
@@ -147,8 +167,10 @@ async def test_analyse_streaming_retries_and_succeeds():
 # analyse_streaming — all retries exhausted → AnalysisError
 # ---------------------------------------------------------------------------
 
+
 async def test_analyse_streaming_raises_after_max_attempts():
     """Three consecutive invalid responses must raise AnalysisError with attempts=3."""
+
     def _bad():
         msg = MagicMock()
         msg.usage.input_tokens = 10
@@ -173,8 +195,10 @@ async def test_analyse_streaming_raises_after_max_attempts():
         with patch("services.analysis.record_spend"):
             with pytest.raises(AnalysisError) as exc_info:
                 await analyse_streaming(
-                    transcript="Test", request_id="req-1",
-                    token_queue=queue, anthropic_api_key="sk-test",
+                    transcript="Test",
+                    request_id="req-1",
+                    token_queue=queue,
+                    anthropic_api_key="sk-test",
                 )
 
     assert exc_info.value.attempts == 3

@@ -14,9 +14,14 @@ _threshold_alerted: bool = False
 
 logger = get_logger(__name__)
 
+
 def calculate_claude_cost(input_tokens: int, output_tokens: int) -> tuple[float, float]:
     """Convert Claude input/output token counts to USD costs; returns (input_cost, output_cost)."""
-    return (input_tokens * CLAUDE_INPUT_COST_PER_TOKEN, output_tokens * CLAUDE_OUTPUT_COST_PER_TOKEN)
+    return (
+        input_tokens * CLAUDE_INPUT_COST_PER_TOKEN,
+        output_tokens * CLAUDE_OUTPUT_COST_PER_TOKEN,
+    )
+
 
 def calculate_whisper_cost(duration_seconds: float) -> float:
     """Return Whisper cost in USD billed in whole minutes; returns 0.0 if duration unknown."""
@@ -24,6 +29,7 @@ def calculate_whisper_cost(duration_seconds: float) -> float:
         return 0.0
     billed_minutes = math.ceil(duration_seconds / 60)
     return billed_minutes * WHISPER_COST_PER_MINUTE
+
 
 def record_spend(amount: float, request_id: str) -> float:
     """Accumulate spend against the daily total, log every call, and warn once when threshold crossed."""

@@ -30,13 +30,15 @@ PROMPT_REGISTRY: dict[str, dict[str, str]] = {
     },
 }
 
+
 def get_prompt(version: str) -> dict[str, str]:
     """Look up a prompt version from PROMPT_REGISTRY; raises KeyError on unknown version."""
     try:
         return PROMPT_REGISTRY[version]
     except KeyError as e:
         raise KeyError(f"Prompt version '{version}' does not exist.") from e
-    
+
+
 def extract_json(raw: str) -> str:
     """Strip markdown code fences from a Claude response before JSON parsing."""
     raw = raw.strip()
@@ -45,13 +47,21 @@ def extract_json(raw: str) -> str:
         raw = re.sub(r"\n?```$", "", raw)
     return raw.strip()
 
+
 def _get_client(api_key: str | None) -> AsyncAnthropic:
     """Returns AsyncAnthropic from user key or env fallback"""
     return AsyncAnthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
 
-async def _call_claude(client: AsyncAnthropic, system: str, user_content: str,token_queue: asyncio.Queue[str | None] | None = None, timeout: float = 60.0,) -> tuple[str, int, int]:
+
+async def _call_claude(
+    client: AsyncAnthropic,
+    system: str,
+    user_content: str,
+    token_queue: asyncio.Queue[str | None] | None = None,
+    timeout: float = 60.0,
+) -> tuple[str, int, int]:
     """Stream a single Claude call; push tokens onto token_queue if provided, else collect silently.
-    
+
     # Design note: one function handles both attempt 1 (token_queue supplied → tokens forwarded
     # live to the HTTP client) and retries (token_queue=None → tokens collected but not forwarded).
     # Always streams internally so usage stats are captured identically on every attempt.
@@ -77,11 +87,23 @@ async def _call_claude(client: AsyncAnthropic, system: str, user_content: str,to
     finally:
         if token_queue is not None:
             await token_queue.put(None)
-    return ("".join(collected), message.usage.input_tokens if message else 0, message.usage.output_tokens if message else 0)
+    return (
+        "".join(collected),
+        message.usage.input_tokens if message else 0,
+        message.usage.output_tokens if message else 0,
+    )
 
-async def analyse_streaming(transcript: str, request_id: str, token_queue: asyncio.Queue[str | None], prompt_version: str = "v1", max_attempts: int = 3, anthropic_api_key: str | None = None,) -> tuple[SalesCallAnalysis, float, float]:
+
+async def analyse_streaming(
+    transcript: str,
+    request_id: str,
+    token_queue: asyncio.Queue[str | None],
+    prompt_version: str = "v1",
+    max_attempts: int = 3,
+    anthropic_api_key: str | None = None,
+) -> tuple[SalesCallAnalysis, float, float]:
     """Stream attempt 1 live; validate collected JSON; retry up to max_attempts with error-fed correction prompt.
-    
+
     # Design note: attempt 1 streams tokens onto token_queue so Streamlit can render fields
     # progressively via partial_json_parser. Retries are silent (token_queue=None) — Streamlit
     # clears and re-renders from the validated __META__ sentinel on completion.
@@ -93,7 +115,7 @@ async def analyse_streaming(transcript: str, request_id: str, token_queue: async
     last_error = ""
     total_input_tokens = 0
     total_output_tokens = 0
-    for attempt in range(1, max_attempts +1):
+    for attempt in range(1, max_attempts + 1):
         if attempt == 1:
             user_content = prompt["user"].format(transcript=transcript)
             raw, in_tok, out_tok = await _call_claude(
@@ -126,9 +148,15 @@ async def analyse_streaming(transcript: str, request_id: str, token_queue: async
         cleaned = extract_json(raw)
         try:
             result = SalesCallAnalysis.model_validate(json.loads(cleaned))
-            input_cost, output_cost = calculate_claude_cost(total_input_tokens, total_output_tokens)
+            input_cost, output_cost = calculate_claude_cost(
+                total_input_tokens, total_output_tokens
+            )
             record_spend(input_cost + output_cost, request_id=request_id)
             return result, input_cost, output_cost
         except (json.JSONDecodeError, ValidationError) as e:
             last_error = str(e)
-    raise AnalysisError(message=f"Analysis failed after {max_attempts} attempts", attempts=max_attempts, last_error=last_error,)
+    raise AnalysisError(
+        message=f"Analysis failed after {max_attempts} attempts",
+        attempts=max_attempts,
+        last_error=last_error,
+    )
