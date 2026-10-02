@@ -1,0 +1,23 @@
+def load_sample_docs() -> list[str]:
+    return [
+        "Total spend over the lifetime of the system was $20,000.",
+        "The ownership field is stored in the customer database.",
+        "PostgreSQL handles transactional database workloads.",
+        "Redis provides fast in-memory caching.",
+        "Docker packages applications into portable containers.",
+        "Kubernetes manages containerized applications across clusters.",
+        "AWS provides cloud computing infrastructure.",
+        "The application uses OAuth for user authentication.",
+        "Customer information is encrypted before being stored.",
+        "The API processes thousands of requests every minute.",
+        "Automated tests run whenever developers push new code.",
+        "Application logs are collected for debugging and monitoring.",
+        "The service automatically scales when traffic increases.",
+        "Database backups are created every night.",
+        "The engineering team reviews code before deployment.",
+        "The system sends alerts when error rates increase.",
+        "A load balancer distributes requests across multiple servers.",
+        "The application uses a message queue for background jobs.",
+        "Metrics track CPU usage, memory consumption, and latency.",
+        "The deployment pipeline releases new versions automatically.",
+    ]
