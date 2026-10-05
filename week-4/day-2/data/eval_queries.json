@@ -1,0 +1,8 @@
+[
+  {"question": "Who has to approve a refund larger than $5,000?", "expected_substring": "must be approved by the regional manager"},
+  {"question": "How long does Northwind keep delivery photos?", "expected_substring": "Delivery photos are retained for 90 days"},
+  {"question": "How fast must the primary on-call engineer acknowledge a page at night?", "expected_substring": "within 15 minutes outside business hours"},
+  {"question": "When do hub managers switch to manual dispatch?", "expected_substring": "down for more than 45 minutes during operating hours"},
+  {"question": "What is the base rate for Express shipping?", "expected_substring": "Express Next business day $24.00"},
+  {"question": "How do e-commerce merchants ship and what do they care about?", "expected_substring": "E-commerce merchants ship parcels directly to consumers"}
+]
