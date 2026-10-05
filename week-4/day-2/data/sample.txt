@@ -1,0 +1,35 @@
+Postmortem: Tracking API Latency Spike
+Northwind Freight (fictional) - Engineering
+
+Summary
+
+On a Tuesday afternoon in March, the tracking API's p99 latency rose from its normal 180 milliseconds to more than 4 seconds for 52 minutes. About 31 percent of tracking requests from merchant integrations timed out during that window. No data was lost, and deliveries were not affected, but two large e-commerce merchants reported that their order status pages showed stale information.
+
+The incident was classified as a SEV2 because it degraded service for multiple customers but did not stop deliveries.
+
+What happened
+
+At 2:14 PM a scheduled job began rebuilding the Redis cache that stores route plans. The rebuild was supposed to run at 2:00 AM, but a configuration change two days earlier had set the schedule in UTC instead of Central Time. While the cache was being rebuilt, most lookups missed the cache and fell through to the PostgreSQL read replica.
+
+The read replica was sized for fallback traffic from driver devices, not for the full volume of merchant tracking requests. Its CPU reached 100 percent within four minutes, and query times climbed from a few milliseconds to several seconds. The tracking API had a 5-second timeout on database calls, so many requests waited the full five seconds before failing.
+
+Detection and response
+
+The p99 latency alert fired at 2:21 PM, seven minutes after the job started. The on-call primary acknowledged the page at 2:24 PM and declared a SEV2. Initial investigation focused on the API servers themselves, because their CPU graphs looked unusual. It took until 2:49 PM to connect the latency to the cache rebuild, after a second engineer noticed the cache hit rate had dropped from 97 percent to 12 percent.
+
+The on-call engineer paused the rebuild job at 2:58 PM. The cache warmed back up from normal traffic, and latency returned to baseline at 3:06 PM.
+
+Why the system allowed it
+
+The schedule change was reviewed, but the reviewer did not notice the time zone. There was no alert on cache hit rate, only on API latency, so the first signal pointed responders at the wrong layer. The fallback path to the read replica had never been load tested at merchant traffic volumes.
+
+Action items
+
+1. Store all job schedules with an explicit time zone and add a lint check that rejects schedules without one. Owner: Platform team. Due in 2 weeks.
+2. Add an alert when the cache hit rate drops below 80 percent for more than 3 minutes. Owner: on-call working group. Due in 1 week.
+3. Load test the read replica fallback at full merchant traffic and resize it or add rate limiting on the fallback path. Owner: Database team. Due in 4 weeks.
+4. Lower the database call timeout in the tracking API from 5 seconds to 1.5 seconds so that requests fail fast instead of piling up. Owner: Tracking API team. Due in 1 week.
+
+Lessons
+
+Fallback paths need the same capacity planning as primary paths, because they only get exercised during the worst moments. Alerts on the symptom (latency) are necessary, but alerts on the likely cause (cache hit rate) shorten diagnosis. A timeout that is too generous can make an outage worse by holding connections open.

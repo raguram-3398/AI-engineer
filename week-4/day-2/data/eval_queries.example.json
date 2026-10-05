@@ -1,4 +1,0 @@
-[
-  {"question": "How long is the refund window?", "expected_substring": "within 30 days of delivery"},
-  {"question": "Who approves exceptions to the policy?", "expected_substring": "approved by the regional manager"}
-]
