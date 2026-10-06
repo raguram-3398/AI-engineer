@@ -1,0 +1,86 @@
+[
+  {
+    "question": "I'm resigning next month. What happens to my work computer?",
+    "expected_id": "it-laptop-return"
+  },
+  {
+    "question": "My laptop screen cracked. Can I get a new machine before the normal cycle?",
+    "expected_id": "it-laptop-refresh"
+  },
+  {
+    "question": "I typed my password wrong too many times and now I can't get in.",
+    "expected_id": "it-account-lockout"
+  },
+  {
+    "question": "How often am I required to change my password?",
+    "expected_id": "it-password-rules"
+  },
+  {
+    "question": "Can I get my login codes by text message?",
+    "expected_id": "it-mfa"
+  },
+  {
+    "question": "What's the daily food budget on a work trip?",
+    "expected_id": "fin-meal-allowance"
+  },
+  {
+    "question": "I forgot to submit receipts from four months ago. Will I still get paid back?",
+    "expected_id": "fin-expense-deadline"
+  },
+  {
+    "question": "How far ahead do I need to reserve plane tickets?",
+    "expected_id": "travel-booking"
+  },
+  {
+    "question": "Can I stop coming into the office entirely?",
+    "expected_id": "hr-hybrid-work"
+  },
+  {
+    "question": "Can I get into the building at 10 at night?",
+    "expected_id": "facilities-office-hours"
+  },
+  {
+    "question": "Do leftover vacation days roll into next year?",
+    "expected_id": "hr-pto"
+  },
+  {
+    "question": "I've been out with the flu since Monday and it's now Friday. Do I need paperwork?",
+    "expected_id": "hr-sick-leave"
+  },
+  {
+    "question": "Someone pretending to be our CEO emailed asking me to buy gift cards.",
+    "expected_id": "sec-phishing"
+  },
+  {
+    "question": "How long do we keep proof-of-delivery signatures?",
+    "expected_id": "legal-data-retention"
+  },
+  {
+    "question": "My password showed up in a data breach. What should I do?",
+    "expected_id": "it-password-rules"
+  },
+  {
+    "question": "Will I be charged if I keep my laptop after I leave?",
+    "expected_id": "it-laptop-return"
+  },
+  {
+    "question": "Can I fly business class to Singapore?",
+    "expected_id": "travel-booking"
+  },
+  {
+    "question": "Can I expense a beer with dinner on a trip?",
+    "expected_id": "fin-meal-allowance"
+  },
+  {
+    "question": "I need Photoshop on my work laptop.",
+    "expected_id": "it-software-requests"
+  },
+  {
+    "question": "How much time off do I get when my baby is born?",
+    "expected_id": "hr-parental-leave"
+  },
+  {
+    "question": "Is texting a verification code to my phone an acceptable second factor?",
+    "expected_id": "it-mfa"
+  }
+]
