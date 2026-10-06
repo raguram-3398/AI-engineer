@@ -1,0 +1,66 @@
+[
+  {
+    "id": "it-laptop-return",
+    "text": "Employees leaving Calder Freight must hand their company laptop and charger to the IT desk within five business days of their final working day. Remote staff receive a prepaid shipping box. Equipment not returned is deducted from the final paycheck at its depreciated value."
+  },
+  {
+    "id": "it-laptop-refresh",
+    "text": "Company laptops are refreshed on a four-year cycle. If a machine fails before then, for example a cracked display or a battery that will not hold charge, open a hardware ticket and IT will issue a replacement from the spare pool, usually within two business days."
+  },
+  {
+    "id": "it-account-lockout",
+    "text": "After five consecutive failed sign-in attempts your account is locked for thirty minutes. To unlock it sooner, use the self-service portal at id.calderfreight.example, verify with your authenticator app, and choose a new password."
+  },
+  {
+    "id": "it-password-rules",
+    "text": "Passwords must be at least fourteen characters long. We do not force periodic changes; you only need to set a new one if you suspect it was exposed. Passphrases made of four or more unrelated words are encouraged over short complex strings."
+  },
+  {
+    "id": "it-mfa",
+    "text": "Multi-factor authentication is mandatory on every company system. Use the approved authenticator app or a hardware security key. One-time codes delivered over SMS are not accepted because they can be intercepted through SIM swapping."
+  },
+  {
+    "id": "fin-meal-allowance",
+    "text": "While travelling on company business, meals are reimbursed up to sixty dollars per day. Alcohol is not reimbursable. Attach an itemized receipt for any single purchase above twenty-five dollars."
+  },
+  {
+    "id": "fin-expense-deadline",
+    "text": "Expense reports must be filed within thirty days of the purchase. Finance will still process reports up to ninety days late with manager sign-off, but anything older than ninety days is rejected and cannot be reimbursed."
+  },
+  {
+    "id": "travel-booking",
+    "text": "Book all flights through the Calder travel portal at least fourteen days before departure. Economy class is required for flights under six hours; premium economy is allowed on longer routes. Bookings made outside the portal are not covered by the travel insurance policy."
+  },
+  {
+    "id": "hr-hybrid-work",
+    "text": "Staff may work from home up to three days per week with their manager's agreement. A fully remote arrangement, with no regular office days, requires written approval from a vice president and is reviewed every year."
+  },
+  {
+    "id": "facilities-office-hours",
+    "text": "The Dallas office is staffed from 7 a.m. to 7 p.m. on weekdays. Outside those hours the front doors stay locked and you need your badge to enter; visitors are not admitted after 7 p.m. without prior security approval."
+  },
+  {
+    "id": "hr-pto",
+    "text": "Full-time employees accrue one and a half days of paid time off each month. Up to ten unused days carry over into the next calendar year; any balance above ten days expires on January 1st."
+  },
+  {
+    "id": "hr-sick-leave",
+    "text": "Sick leave is tracked separately from paid time off and does not reduce your vacation balance. For absences longer than three consecutive working days, submit a note from a medical provider to HR when you return."
+  },
+  {
+    "id": "hr-parental-leave",
+    "text": "Primary caregivers receive sixteen weeks of fully paid parental leave, and secondary caregivers receive six weeks. Leave can begin up to two weeks before the expected birth or adoption date and may be split into two blocks."
+  },
+  {
+    "id": "legal-data-retention",
+    "text": "Customer shipment records, including addresses and proof-of-delivery signatures, are retained for seven years to satisfy audit requirements. After seven years they are permanently deleted from all systems, including backups."
+  },
+  {
+    "id": "sec-phishing",
+    "text": "If you receive a suspicious email, especially one that claims to be from an executive and asks for gift cards, payments, or credentials, do not click any links. Forward it to the security team within one hour and then delete it."
+  },
+  {
+    "id": "it-software-requests",
+    "text": "Only software from the approved catalogue may be installed on company devices. To request a new application, submit a software ticket with a business justification; security review normally takes five business days."
+  }
+]

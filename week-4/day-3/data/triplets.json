@@ -1,0 +1,152 @@
+[
+  {
+    "category": "negation",
+    "anchor": "The refund request was approved by the finance team on Monday.",
+    "positive": "On Monday, finance signed off on the refund.",
+    "negative": "The refund request was not approved by the finance team on Monday."
+  },
+  {
+    "category": "negation",
+    "anchor": "The new firmware fixes the battery drain on older phones.",
+    "positive": "After the latest update, older handsets stop losing charge so quickly.",
+    "negative": "The new firmware does not fix the battery drain on older phones."
+  },
+  {
+    "category": "negation",
+    "anchor": "Patients should take this medication with food.",
+    "positive": "Swallow these pills alongside a meal.",
+    "negative": "Patients should never take this medication with food."
+  },
+  {
+    "category": "negation",
+    "anchor": "The bridge is open to traffic again after the repairs.",
+    "positive": "Cars can cross the bridge now that the repair work is finished.",
+    "negative": "The bridge is not open to traffic again after the repairs."
+  },
+  {
+    "category": "negation",
+    "anchor": "The contract allows remote work for all engineers.",
+    "positive": "Under the agreement, every engineer may work from home.",
+    "negative": "The contract does not allow remote work for any engineers."
+  },
+  {
+    "category": "numbers",
+    "anchor": "Customers can return items within 30 days of delivery.",
+    "positive": "You have a one-month window after delivery to send products back.",
+    "negative": "Customers can return items within 90 days of delivery."
+  },
+  {
+    "category": "numbers",
+    "anchor": "The server rack draws about 2 kilowatts at full load.",
+    "positive": "Running flat out, the rack consumes roughly two thousand watts.",
+    "negative": "The server rack draws about 20 kilowatts at full load."
+  },
+  {
+    "category": "numbers",
+    "anchor": "The flight departs at 7:15 in the morning.",
+    "positive": "The plane takes off at quarter past seven a.m.",
+    "negative": "The flight departs at 7:15 in the evening."
+  },
+  {
+    "category": "numbers",
+    "anchor": "The loan carries an interest rate of 4 percent per year.",
+    "positive": "Annual interest on the loan is four percent.",
+    "negative": "The loan carries an interest rate of 14 percent per year."
+  },
+  {
+    "category": "numbers",
+    "anchor": "The hike to the summit takes about three hours.",
+    "positive": "Plan on a roughly 180-minute trek to reach the peak.",
+    "negative": "The hike to the summit takes about thirteen hours."
+  },
+  {
+    "category": "role_reversal",
+    "anchor": "The vendor sued the client over unpaid invoices.",
+    "positive": "Over unpaid bills, the supplier took the customer to court.",
+    "negative": "The client sued the vendor over unpaid invoices."
+  },
+  {
+    "category": "role_reversal",
+    "anchor": "The manager praised the intern for the quarterly report.",
+    "positive": "The intern was complimented by their boss on the quarterly report.",
+    "negative": "The intern praised the manager for the quarterly report."
+  },
+  {
+    "category": "role_reversal",
+    "anchor": "The startup acquired the larger competitor last year.",
+    "positive": "Last year the young company bought out its bigger rival.",
+    "negative": "The larger competitor acquired the startup last year."
+  },
+  {
+    "category": "role_reversal",
+    "anchor": "The dog chased the delivery driver down the street.",
+    "positive": "The courier was pursued along the road by the dog.",
+    "negative": "The delivery driver chased the dog down the street."
+  },
+  {
+    "category": "role_reversal",
+    "anchor": "Alice transferred five hundred dollars to Bob.",
+    "positive": "Bob received $500 from Alice.",
+    "negative": "Bob transferred five hundred dollars to Alice."
+  },
+  {
+    "category": "paraphrase_no_overlap",
+    "anchor": "How do I reset my password?",
+    "positive": "I forgot my login credentials and need new ones.",
+    "negative": "Where can I see when my password was last reset?"
+  },
+  {
+    "category": "paraphrase_no_overlap",
+    "anchor": "The car would not start this morning.",
+    "positive": "My automobile refused to turn over at dawn.",
+    "negative": "The car would not stop beeping this morning."
+  },
+  {
+    "category": "paraphrase_no_overlap",
+    "anchor": "The physician recommended a week of rest.",
+    "positive": "The doctor advised taking it easy for seven days.",
+    "negative": "The physician recommended a second surgery within a week."
+  },
+  {
+    "category": "paraphrase_no_overlap",
+    "anchor": "Revenue declined sharply in the third quarter.",
+    "positive": "Q3 sales fell off a cliff.",
+    "negative": "Revenue was reported in the third quarter as planned."
+  },
+  {
+    "category": "paraphrase_no_overlap",
+    "anchor": "The shipment is delayed because of a storm.",
+    "positive": "Bad weather is holding up the delivery.",
+    "negative": "The shipment is delayed because of a customs inspection."
+  },
+  {
+    "category": "lexical_overlap_different_meaning",
+    "anchor": "The bank approved my mortgage application.",
+    "positive": "The lender said yes to my home loan.",
+    "negative": "We had a picnic on the grassy bank of the river."
+  },
+  {
+    "category": "lexical_overlap_different_meaning",
+    "anchor": "The python escaped from its enclosure at the zoo.",
+    "positive": "A large snake got out of its pen at the wildlife park.",
+    "negative": "The Python program escaped the infinite loop."
+  },
+  {
+    "category": "lexical_overlap_different_meaning",
+    "anchor": "The pitcher threw a fastball in the ninth inning.",
+    "positive": "In the final inning the hurler delivered a heater.",
+    "negative": "She poured lemonade from the glass pitcher in the ninth hour."
+  },
+  {
+    "category": "lexical_overlap_different_meaning",
+    "anchor": "Apple reported record iPhone sales this quarter.",
+    "positive": "The Cupertino company sold more phones than ever in the latest quarter.",
+    "negative": "The apple orchard reported a record harvest this quarter."
+  },
+  {
+    "category": "lexical_overlap_different_meaning",
+    "anchor": "The model overfit the training data.",
+    "positive": "The network memorized its training examples and generalized poorly.",
+    "negative": "The fashion model fit the dress perfectly at the training shoot."
+  }
+]

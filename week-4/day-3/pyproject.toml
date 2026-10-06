@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embedding-comparison"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "sentence-transformers",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+addopts = "-ra -q -m 'not slow'"
+python_files = ["test_*.py"]
+markers = [
+    "slow: loads the real embedding model (run explicitly with: pytest -m slow)",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]   # pycodestyle, pyflakes, isort, pyupgrade
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+strict = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
