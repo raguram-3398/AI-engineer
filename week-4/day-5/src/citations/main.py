@@ -1,6 +1,8 @@
 """Edges and wiring: load cases, call Claude behind a Protocol, print the eval.
 
-Run:  PYTHONPATH=src python -m citations.main     (needs ANTHROPIC_API_KEY)
+Run:  PYTHONPATH=src python -m citations.main                      # A
+      PYTHONPATH=src python -m citations.main --no-version-hints   # B
+(needs ANTHROPIC_API_KEY)
 """
 
 import json
@@ -32,6 +34,7 @@ from citations.models import (
     RawResponse,
 )
 
+NO_VERSION_HINTS_FLAG: str = "--no-version-hints"  # run ablation B
 CASES_PATH: Path = Path(__file__).resolve().parents[2] / "data" / "cases.json"
 
 
@@ -122,15 +125,26 @@ class AnthropicClient:
 # --- Wiring ----------------------------------------------------------------
 
 
-def answer(query: str, chunks: Sequence[CitedChunk], client: LLMClient) -> CitedAnswer:
+def answer(
+    query: str,
+    chunks: Sequence[CitedChunk],
+    client: LLMClient,
+    version_hints: bool = True,
+) -> CitedAnswer:
     """Guard cost, call Claude, return a verified cited answer."""
-    request = build_request(query, chunks, model=MODEL_ID, max_tokens=MAX_OUTPUT_TOKENS)
+    request = build_request(
+        query,
+        chunks,
+        model=MODEL_ID,
+        max_tokens=MAX_OUTPUT_TOKENS,
+        version_hints=version_hints,
+    )
     check_budget(worst_case_usd(client.count_tokens(request), MAX_OUTPUT_TOKENS))
     return parse_response(client.create(request), chunks)
 
 
 def run(
-    cases: Sequence[EvalCase], client: LLMClient
+    cases: Sequence[EvalCase], client: LLMClient, version_hints: bool = True
 ) -> tuple[list[tuple[EvalCase, CitedAnswer, CaseScore]], list[str], float]:
     """Answer and score every case. Returns (results, failures, total USD).
 
@@ -142,7 +156,7 @@ def run(
     warned = False
     for case in cases:
         try:
-            ans = answer(case.query, case.retrieved, client)
+            ans = answer(case.query, case.retrieved, client, version_hints)
         except CitationError as e:
             failures.append(f"{case.case_id}: {type(e).__name__}: {e}")
             continue
@@ -162,8 +176,10 @@ def print_report(
     results: Sequence[tuple[EvalCase, CitedAnswer, CaseScore]],
     failures: Sequence[str],
     spent: float,
+    version_hints: bool = True,
 ) -> None:
-    print(f"\nModel: {MODEL_ID}\n")
+    mode = "A (version hints)" if version_hints else "B (no version hints)"
+    print(f"\nModel: {MODEL_ID}   Run: {mode}\n")
     print(f"{'case':<6}{'kind':<14}{'prec':>6}{'rec':>6}  stale  uncited  cited")
     for case, ans, s in results:
         cited = sorted({c.chunk.chunk_id for cl in ans.claims for c in cl.citations})
@@ -193,9 +209,10 @@ def main() -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY is not set", file=sys.stderr)
         return 2
+    version_hints = NO_VERSION_HINTS_FLAG not in sys.argv[1:]
     cases = load_cases(CASES_PATH)
-    results, failures, spent = run(cases, AnthropicClient())
-    print_report(results, failures, spent)
+    results, failures, spent = run(cases, AnthropicClient(), version_hints)
+    print_report(results, failures, spent, version_hints)
     return 1 if failures else 0
 
 

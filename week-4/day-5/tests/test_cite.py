@@ -92,3 +92,12 @@ def test_budget_allows_limit_and_rejects_above() -> None:
     check_budget(0.02, limit=0.02)
     with pytest.raises(CostLimitError):
         check_budget(0.0201, limit=0.02)
+
+
+def test_no_version_hints_removes_dates_and_version_rule() -> None:
+    req = build_request("q", CHUNKS, model="m", max_tokens=1, version_hints=False)
+    titles = [d["title"] for d in req["messages"][0]["content"][:-1]]  # type: ignore[index]
+    assert titles[0] == "expense-policy, page 2"
+    assert not any("effective" in t for t in titles)
+    assert "version" not in str(req["system"])
+    assert ABSTAIN_TEXT in str(req["system"])
