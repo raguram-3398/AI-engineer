@@ -1,0 +1,20 @@
+[
+  {"id": "v01", "kind": "version", "text": "How many days a week do hybrid staff have to come into the office?", "date_from": 20260101, "expected_id": "remote-work-policy@20260301#p1"},
+  {"id": "v02", "kind": "version", "text": "How many days a week do hybrid staff have to come into the office?", "date_to": 20241231, "expected_id": "remote-work-policy@20240115#p1"},
+  {"id": "v03", "kind": "version", "text": "How much money can I get for home office furniture?", "date_from": 20260101, "expected_id": "remote-work-policy@20260301#p2"},
+  {"id": "v04", "kind": "version", "text": "How much money can I get for home office furniture?", "date_to": 20241231, "expected_id": "remote-work-policy@20240115#p2"},
+  {"id": "v05", "kind": "version", "text": "Can I work remotely from abroad, and who has to sign off?", "date_from": 20260101, "expected_id": "remote-work-policy@20260301#p3"},
+  {"id": "v06", "kind": "version", "text": "Can I work remotely from abroad, and who has to sign off?", "date_to": 20241231, "expected_id": "remote-work-policy@20240115#p3"},
+  {"id": "v07", "kind": "version", "text": "What's the deadline for filing an expense report?", "date_from": 20260101, "expected_id": "expense-policy@20260215#p1"},
+  {"id": "v08", "kind": "version", "text": "What's the deadline for filing an expense report?", "date_to": 20241231, "expected_id": "expense-policy@20240201#p1"},
+  {"id": "v09", "kind": "version", "text": "How much can I spend on food per day on a business trip?", "source": "expense-policy", "date_from": 20260101, "expected_id": "expense-policy@20260215#p2"},
+  {"id": "v10", "kind": "version", "text": "How much can I spend on food per day on a business trip?", "source": "expense-policy", "date_to": 20241231, "expected_id": "expense-policy@20240201#p2"},
+  {"id": "v11", "kind": "version", "text": "Which purchases need sign-off before I buy them?", "date_from": 20260101, "expected_id": "expense-policy@20260215#p3"},
+  {"id": "v12", "kind": "version", "text": "Which purchases need sign-off before I buy them?", "date_to": 20241231, "expected_id": "expense-policy@20240201#p3"},
+  {"id": "s01", "kind": "source", "text": "What's the most I can pay for a hotel room per night?", "source": "travel-policy", "expected_id": "travel-policy@20250901#p1"},
+  {"id": "s02", "kind": "source", "text": "When am I allowed to fly business class?", "source": "travel-policy", "expected_id": "travel-policy@20250901#p2"},
+  {"id": "s03", "kind": "source", "text": "Will the company pay for wine at a dinner with a customer?", "source": "expense-policy", "date_from": 20260101, "expected_id": "expense-policy@20260215#p2"},
+  {"id": "c01", "kind": "control", "text": "Do I need to change my password every 90 days?", "expected_id": "it-security-handbook@20250610#p1"},
+  {"id": "c02", "kind": "control", "text": "What should I do if my laptop gets stolen?", "expected_id": "it-security-handbook@20250610#p2"},
+  {"id": "c03", "kind": "control", "text": "Can I paste customer records into ChatGPT?", "expected_id": "it-security-handbook@20250610#p3"}
+]
