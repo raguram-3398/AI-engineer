@@ -20,12 +20,18 @@ from citations.models import (
     RawResponse,
 )
 
+# Run A: unchanged from the first run, so A's scores stay comparable.
 SYSTEM_PROMPT: str = (
     f"Today is {AS_OF_DATE}. Answer the question using only the documents provided. "
     "Some documents are different versions of the same policy; each title shows its "
     "effective date. Unless the question names a version, answer from the version in "
     "effect today. If the documents do not contain the answer, reply with exactly "
     f"{ABSTAIN_TEXT} and nothing else."
+)
+# Ablation B: same prompt minus the date and the version rule.
+SYSTEM_PROMPT_NO_VERSION: str = (
+    "Answer the question using only the documents provided. If the documents do "
+    f"not contain the answer, reply with exactly {ABSTAIN_TEXT} and nothing else."
 )
 
 
@@ -34,18 +40,27 @@ def _format_date(yyyymmdd: int) -> str:
     return f"{s[:4]}-{s[4:6]}-{s[6:]}"
 
 
-def build_documents(chunks: Sequence[CitedChunk]) -> list[dict[str, object]]:
+def _title(c: CitedChunk, version_hints: bool) -> str:
+    if version_hints:
+        return f"{c.source} (effective {_format_date(c.date)}), page {c.page}"
+    return f"{c.source}, page {c.page}"
+
+
+def build_documents(
+    chunks: Sequence[CitedChunk], version_hints: bool = True
+) -> list[dict[str, object]]:
     """One plain-text document per chunk, citations enabled on every one.
 
     Only `chunk.text` is citable. Version and identity go in `title` (the model
     needs the date to pick a version) and `context` (stringified metadata);
-    neither can ever appear in `cited_text`.
+    neither can ever appear in `cited_text`. With version_hints=False the title
+    has no date (ablation B).
     """
     return [
         {
             "type": "document",
             "source": {"type": "text", "media_type": "text/plain", "data": c.text},
-            "title": f"{c.source} (effective {_format_date(c.date)}), page {c.page}",
+            "title": _title(c, version_hints),
             "context": json.dumps(
                 {"chunk_id": c.chunk_id, "source": c.source, "page": c.page}
             ),
@@ -56,22 +71,32 @@ def build_documents(chunks: Sequence[CitedChunk]) -> list[dict[str, object]]:
 
 
 def build_request(
-    query: str, chunks: Sequence[CitedChunk], *, model: str, max_tokens: int
+    query: str,
+    chunks: Sequence[CitedChunk],
+    *,
+    model: str,
+    max_tokens: int,
+    version_hints: bool = True,
 ) -> dict[str, object]:
     """Messages API request: documents first, question last.
 
     Document i in this request is chunks[i]; parse_response relies on that order.
+    version_hints=False removes dates from titles and the version rule from the
+    system prompt (ablation B).
     Raises ValueError on an empty query or no chunks (programmer error).
     """
     if not query.strip():
         raise ValueError("query is empty")
     if not chunks:
         raise ValueError("no chunks to cite from")
-    content = [*build_documents(chunks), {"type": "text", "text": query}]
+    content = [
+        *build_documents(chunks, version_hints),
+        {"type": "text", "text": query},
+    ]
     return {
         "model": model,
         "max_tokens": max_tokens,
-        "system": SYSTEM_PROMPT,
+        "system": SYSTEM_PROMPT if version_hints else SYSTEM_PROMPT_NO_VERSION,
         "messages": [{"role": "user", "content": content}],
     }
 
