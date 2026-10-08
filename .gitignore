@@ -25,6 +25,7 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+datasets/
 
 # Testing / coverage
 .pytest_cache/
