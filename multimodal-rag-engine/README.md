@@ -109,7 +109,21 @@ every final chunk ≤ 510 BGE tokens and never crosses a page
 
 ## Indexing
 
-Run: `python -m multimodal_rag.ingest` (about 15 min on 2 CPUs, $0). It writes `data/chunks.jsonl`, embeds, upserts to the index named in `config.py` and prints the vector count.
+Run: `python -m multimodal_rag.ingest` (about 6.5 min on an M3, about 19 min on 2 CPUs; $0). It writes `data/chunks.jsonl`, embeds, upserts to the index named in `config.py` and prints the vector count.
+
+### Day 27 results (index `fda-bge-small-en-v1-5-v1`, built 2026-10-09 on an M3 MacBook Air)
+
+| Measure | Value |
+|---|---|
+| Pages loaded | 2,313 of 2,313 |
+| Pages OCR'd (< 50 chars of text) | 165, none empty or timed out |
+| Chunks = Pinecone vectors | 4,183 (books 2,672 = 3.2 per page; slides 1,511) |
+| Max chunk size | 510 BGE tokens |
+| Page alignment vs dataset (sandbox run) | 2,129 / 2,148 text pages match their own page best; the rest tie with near-identical neighbouring slides |
+| Time | load + chunk 223 s, embed 92 s (CPU), total 6 min 24 s |
+| Claude cost | $0 |
+
+Known: 131 book chunks are under 20 tokens (`chunk_by_title` tails, page numbers); OCR of one scanned newsletter page (DDI deck page 80) is unreadable. Any chunking change waits for the Day 28 baseline.
 
 ### Re-index procedure
 
