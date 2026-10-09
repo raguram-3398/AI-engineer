@@ -60,7 +60,7 @@ Package `multimodal_rag/`.
 
 | File | Contents | Day |
 |---|---|---|
-| `data/chunks.jsonl` | All chunks (BM25 + UI display), ~3 MB | 27 |
+| `data/chunks.jsonl` | All chunks (BM25 + UI display), ~4 MB | 27 |
 | `data/eval/unanswerable_en.jsonl` | 20 unanswerable queries | 27 |
 | `data/eval/sample.json` | IDs of the fixed 60 + 20 eval sample | 28 |
 | `data/eval/followups.jsonl` | 10 two-turn conversations | 31 |
@@ -99,9 +99,31 @@ every final chunk ≤ 510 BGE tokens and never crosses a page
 
 ### Fixed facts the code relies on
 
-- Dataset pages are 0-indexed; `unstructured` pages are 1-indexed, so subtract 1.
+- Dataset pages are 0-indexed. The loader takes the page number from its pypdf loop index (0-indexed), never from `unstructured` (1-indexed). `pdftoppm` is 1-indexed, so OCR passes `page + 1`.
+- `partition_pdf(strategy="fast")` drops a whole PDF to `hi_res` with no text if any one page has heavy vector graphics (2 of 52 files, incl. the 373-page book). So each page is partitioned as its own 1-page PDF; only the heavy page falls back and gets OCR.
 - OCR runs per page, only on the 162 low-text pages (~3 s/page).
 - Haiku 5.5: never pass `temperature`. RAGAS uses `bypass_temperature=True` with `langchain-community<0.4`.
 - Rerank at most the top 20 (~1.6 s on 2 CPUs).
 - Docker uses CPU-only torch.
 - The eval sample is never used for tuning.
+
+## Indexing
+
+Run: `python -m multimodal_rag.ingest` (about 15 min on 2 CPUs, $0). It writes `data/chunks.jsonl`, embeds, upserts to the index named in `config.py` and prints the vector count.
+
+### Re-index procedure
+
+1. Bump the version suffix of `INDEX_NAME` in `config.py` (`…-v1` → `…-v2`). Never re-ingest into the live index: chunk IDs are deterministic, so changed pages overwrite, but IDs that no longer exist (a page that now yields fewer chunks) would stay behind as stale vectors.
+2. Run ingest. It creates the new index and checks that the vector count equals the number of chunks.
+3. Run the eval against the new index. Accept it only if the gate passes (from Day 29).
+4. Commit `config.py` and `data/chunks.jsonl` together. BM25 and Pinecone must come from the same chunk file.
+5. Delete the old index only after the new one is accepted (Pinecone free tier holds 5 indexes).
+
+### Blast radius
+
+A bad ingest affects only the index named in `config.py` and `data/chunks.jsonl`, plus anything that reads them: answers, citations, eval scores and the UI. It does not touch the dataset (read-only), the Day 25 index or other projects. Queries must use the same embedding model as the index; the model id is in the index name and in every record's metadata.
+
+### Rollback
+
+- Code and config: `git revert` the commit. `INDEX_NAME` and `chunks.jsonl` go back together, and the previous index still exists because it is deleted only after the new one is accepted.
+- Data: if the live index itself is damaged (e.g. a bad upsert into v1), delete namespace `fda` and re-run ingest at the last good commit. Chunk IDs and the chunk count are deterministic, so this rebuilds the same records. Chunk text is not byte-identical: two runs on the same machine differed in 1 of 4,183 chunks (overlapping glyphs that pdfminer orders differently from call to call); the sandbox vs the Mac differed in 105 (101 on OCR pages, from a different tesseract build). Always commit the `chunks.jsonl` written by the run that built the live index.

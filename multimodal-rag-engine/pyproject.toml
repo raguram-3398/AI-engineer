@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multimodal-rag-engine"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas",
+    "pinecone>=7",
+    "pyarrow",
+    "pypdf",
+    "python-dotenv",
+    "sentence-transformers",
+    "unstructured[pdf]>=0.27,<0.28",
+]
+# System tools for OCR: tesseract and poppler (pdftoppm).
+
+[project.optional-dependencies]
+dev = ["black", "pytest", "ruff"]
+
+[tool.setuptools]
+packages = ["multimodal_rag"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
