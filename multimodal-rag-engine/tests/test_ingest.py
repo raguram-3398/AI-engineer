@@ -16,7 +16,8 @@ from multimodal_rag.config import (
     MAX_TOKENS,
     PDF_DIR,
 )
-from multimodal_rag.ingest import Page, chunk_page, load_pdf, split_to_limit
+from multimodal_rag.contracts import Page
+from multimodal_rag.ingest import chunk_page, load_pdf, split_to_limit
 
 needs_dataset = pytest.mark.skipif(
     not PDF_DIR.is_dir(), reason="dataset is gitignored; not present here"
