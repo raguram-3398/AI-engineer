@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -45,34 +45,9 @@ from multimodal_rag.config import (
     REGION,
     UPSERT_BATCH_SIZE,
 )
+from multimodal_rag.contracts import Chunk, Page
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Page:
-    """One PDF page. `page` is 0-indexed (dataset convention); `ocr` = text from OCR."""
-
-    doc_id: str
-    page: int
-    text: str
-    ocr: bool
-
-
-@dataclass(frozen=True)
-class Chunk:
-    """One embeddable unit: <= MAX_TOKENS BGE tokens, never crosses a page.
-
-    `chunk_id` is `doc_id-page-n` (n = 0, 1, ... within the page), so re-running
-    ingest overwrites the same Pinecone records instead of duplicating them.
-    """
-
-    chunk_id: str
-    doc_id: str
-    page: int
-    text: str
-    n_tokens: int
-    kind: str  # "text" today; "vision" from Day 30
 
 
 class IngestError(Exception):
