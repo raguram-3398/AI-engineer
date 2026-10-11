@@ -57,9 +57,35 @@ EVAL_K: int = 10  # distinct pages scored by recall@10 / NDCG@10
 CLAUDE_MODEL: str = "claude-haiku-5-5"  # never pass `temperature` (400 on 5.5)
 CLAUDE_TIMEOUT_S: float = 30.0  # per attempt; the SDK retries twice on its own
 ANSWER_K: int = 10  # top chunks sent to Claude as documents
-ANSWER_MAX_TOKENS: int = 2048  # 2/8 spot-check answers hit 1,024 (one needed 1,598)
+ANSWER_MAX_TOKENS: int = (
+    4096  # 2048 cut one Day 29 eval answer (1,024 cut 2/8 on Day 28)
+)
 PRICE_IN_PER_MTOK: float = 0.10  # Haiku 5.5, prompts <= 100k tokens (pricing page)
 PRICE_OUT_PER_MTOK: float = 0.50
 ABSTAIN_TEXT: str = "The documents do not contain the answer."
 ABSTAIN_PERCENTILE: float = 5.0  # % of answerable non-sample queries below threshold
 ABSTAIN_SCORE: float = 0.6837  # p5 top-1 of the 304 non-sample queries (Day 28)
+
+# Eval pipeline (Day 29)
+SCORES_PATH: Path = DATA_DIR / "scores.jsonl"  # one line per full eval run
+EVAL_WORKERS: int = 8  # parallel Claude calls for answers and the judge
+# Haiku 5.5 thinks by default; thinking tokens count against max_tokens (and are
+# billed as output). At 4096, 13/60 faithfulness verdicts on the longest answers
+# were cut off (2.7k of 4,096 output tokens were thinking).
+RAGAS_MAX_TOKENS: int = 16384
+JUDGE_MAX_TOKENS: int = 512
+# Gate: a run fails if a metric drops by more than its threshold vs the last
+# passed run. Threshold = max(floor, run-to-run noise of the unchanged baseline
+# measured on Ram's Mac, Day 29 Mac runs 1 vs 2); floor 0.05 for the four quality
+# metrics, 0 (any drop) for abstain accuracy. Mac noise: faithfulness 0.014,
+# answer relevancy 0.036, recall@10 and NDCG@10 0, abstain_unanswerable 0,
+# answer_answerable 1/60. answer_answerable is kept at 2/60: the same unchanged
+# code flipped 2 queries (152, 212) in an earlier sandbox pair.
+GATE_THRESHOLDS: dict[str, float] = {
+    "faithfulness": 0.05,
+    "answer_relevancy": 0.05,
+    "recall@10": 0.05,
+    "ndcg@10": 0.05,
+    "abstain_unanswerable": 0.0,
+    "answer_answerable": 2 / 60,
+}
