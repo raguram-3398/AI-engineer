@@ -7,15 +7,17 @@ import pytest
 from pinecone.errors import PineconeTimeoutError
 
 from multimodal_rag.answer import answer, build_documents, verify_citations
-from multimodal_rag.config import ABSTAIN_SCORE, ABSTAIN_TEXT
+from multimodal_rag.config import ABSTAIN_TEXT, REFUSAL_TEXT
 from multimodal_rag.contracts import Chunk, Hit
 from multimodal_rag.retrieve import QueryError, Retriever
 
 TEXT = "FDA approved 50 novel drugs in 2021. Most were small molecules."
 
 
-def _hit(score: float = 0.8, page: int = 4, text: str = TEXT) -> Hit:
-    return Hit(Chunk(f"deck-{page}-0", "deck", page, text, 12, "text"), score)
+def _hit(
+    score: float = 0.8, page: int = 4, text: str = TEXT, kind: str = "text"
+) -> Hit:
+    return Hit(Chunk(f"deck-{page}-0", "deck", page, text, 12, kind), score)
 
 
 def _cite(start: int, end: int, cited: str, doc: int = 0) -> NS:
@@ -49,10 +51,11 @@ class FakeClient:
         return self.response
 
 
-def test_low_score_abstains_without_calling_claude() -> None:
-    result = answer("q", [_hit(score=ABSTAIN_SCORE - 0.01)], NoCallClient())
-    assert result.abstained and result.text == ABSTAIN_TEXT
-    assert result.citations == [] and result.cost_usd == 0.0
+def test_low_score_still_goes_to_claude() -> None:
+    """No score threshold: query 218's gold page ranked 3rd at top-1 0.637."""
+    content = [NS(type="text", text="50 drugs.", citations=[_cite(0, 36, TEXT[:36])])]
+    result = answer("q", [_hit(score=0.30)], FakeClient(content))
+    assert not result.abstained and result.cost_usd > 0
 
 
 def test_no_hits_abstains_without_calling_claude() -> None:
@@ -94,6 +97,24 @@ def test_max_tokens_stop_raises() -> None:
     content = [NS(type="text", text="The answer is", citations=None)]
     with pytest.raises(QueryError, match="max_tokens"):
         answer("q", [_hit()], FakeClient(content, stop_reason="max_tokens"))
+
+
+def test_vision_chunk_is_labelled_generated_for_claude_and_in_citations() -> None:
+    hit = _hit(page=4, kind="vision")
+    assert (
+        build_documents([hit])[0]["title"] == "generated visual description, deck p.5"
+    )
+    content = [NS(type="text", text="50.", citations=[_cite(0, 36, TEXT[:36])])]
+    assert verify_citations(content, [hit])[0].generated
+
+
+def test_refusal_is_its_own_outcome() -> None:
+    """Partial text and citations are discarded, cost is kept, not an abstain."""
+    content = [NS(type="text", text="Partial", citations=[_cite(0, 36, TEXT[:36])])]
+    result = answer("q", [_hit()], FakeClient(content, stop_reason="refusal"))
+    assert result.refused and not result.abstained
+    assert result.text == REFUSAL_TEXT and result.citations == []
+    assert result.cost_usd > 0
 
 
 def _retriever(index) -> Retriever:

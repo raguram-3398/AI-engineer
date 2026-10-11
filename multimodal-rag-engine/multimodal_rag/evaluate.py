@@ -1,7 +1,7 @@
 """Evaluate the pipeline.
 
 Free retrieval eval (no Claude): page-level recall@10 and NDCG@10 on all 364
-English queries, the fixed eval sample, and the abstain threshold.
+English queries, split by visual content type, and the fixed eval sample.
     python -m multimodal_rag.evaluate
 
 Full eval (Claude): answers the fixed 60 + 20 sample, scores it with RAGAS, the
@@ -27,8 +27,6 @@ from dotenv import load_dotenv
 
 from multimodal_rag.answer import answer, cost_usd
 from multimodal_rag.config import (
-    ABSTAIN_PERCENTILE,
-    ABSTAIN_SCORE,
     ANSWER_K,
     CLAUDE_MODEL,
     CLAUDE_TIMEOUT_S,
@@ -50,6 +48,7 @@ from multimodal_rag.config import (
     SAMPLE_SIZE,
     SCORES_PATH,
     UNANSWERABLE_PATH,
+    VISION_CONTENT,
     VISUAL_CONTENT,
 )
 from multimodal_rag.contracts import Answer, Hit
@@ -137,14 +136,20 @@ def ndcg_at_k(ranked: list[Page], gold: dict[Page, int], k: int = EVAL_K) -> flo
     return dcg / idcg
 
 
-def abstain_threshold(top1: list[float], pct: float = ABSTAIN_PERCENTILE) -> float:
-    """Top-1 score below which `pct`% of answerable queries fall."""
-    return float(np.percentile(top1, pct))
+def recall_by_content(ret: pd.DataFrame) -> dict[str, float]:
+    """recall@10 over the queries whose relevant pages hold each VISION_CONTENT
+    type (a query can count for several). Logged, not gated."""
+    return {
+        f"recall@10 {t}": float(
+            ret.recall[ret.content_type.map(lambda c: t in c)].mean()
+        )
+        for t in VISION_CONTENT
+    }
 
 
 def retrieval_scores(queries: pd.DataFrame, retriever: Retriever) -> pd.DataFrame:
-    """Per query: page-level recall@10, NDCG@10, top-1 score, and whether the top
-    chunks held fewer than EVAL_K distinct pages."""
+    """Per query: page-level recall@10, NDCG@10, whether the top chunks held
+    fewer than EVAL_K distinct pages, and the query's content types."""
     rows = []
     for q in queries.itertuples():
         hits = retriever.search(q.query)
@@ -153,8 +158,8 @@ def retrieval_scores(queries: pd.DataFrame, retriever: Retriever) -> pd.DataFram
             {
                 "recall": recall_at_k(ranked, q.gold),
                 "ndcg": ndcg_at_k(ranked, q.gold),
-                "top1": hits[0].score,
                 "short": len(ranked) < EVAL_K,
+                "content_type": set(q.content_type),
             }
         )
     return pd.DataFrame(rows)
@@ -210,6 +215,11 @@ def run_sample(
         Result(qid, q, ref, h[:ANSWER_K], a)
         for (qid, q, ref), h, a in zip(items, hits, answers)
     ]
+
+
+def answered(a: Answer) -> bool:
+    """Claude answered from the documents: neither an abstain nor a refusal."""
+    return not (a.abstained or a.refused)
 
 
 def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
@@ -281,12 +291,12 @@ def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
         return out.to_pandas(), float(cost)
 
     answerable = [r for r in results if r.reference is not None]
-    answered = [i for i, r in enumerate(answerable) if not r.answer.abstained]
+    scored = [i for i, r in enumerate(answerable) if answered(r.answer)]
     ctx, ctx_cost = score(
         answerable, [LLMContextPrecisionWithReference(), LLMContextRecall()]
     )
     ans, ans_cost = score(
-        [answerable[i] for i in answered], [faithfulness, answer_relevancy]
+        [answerable[i] for i in scored], [faithfulness, answer_relevancy]
     )
     df = pd.DataFrame(
         {
@@ -296,8 +306,8 @@ def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
             "context_recall": ctx["context_recall"],
         }
     )
-    df.loc[answered, "faithfulness"] = ans["faithfulness"].to_numpy()
-    df.loc[answered, "answer_relevancy"] = ans["answer_relevancy"].to_numpy()
+    df.loc[scored, "faithfulness"] = ans["faithfulness"].to_numpy()
+    df.loc[scored, "answer_relevancy"] = ans["answer_relevancy"].to_numpy()
     return df, ctx_cost + ans_cost
 
 
@@ -361,11 +371,12 @@ def judge(
 
 
 def abstain_scores(results: list[Result]) -> dict[str, float]:
-    """Abstain accuracy both ways, from `Answer.abstained` (threshold abstain, or
-    ABSTAIN_TEXT with no citations): share of unanswerable results that abstained,
-    and share of answerable results that did not."""
+    """Abstain accuracy both ways, from `Answer.abstained` (ABSTAIN_TEXT with no
+    citations): share of unanswerable results that abstained,
+    and share of answerable results that were answered. A refusal is neither: it
+    counts against both."""
     ua = [r.answer.abstained for r in results if r.reference is None]
-    ans = [not r.answer.abstained for r in results if r.reference is not None]
+    ans = [answered(r.answer) for r in results if r.reference is not None]
     return {
         "abstain_unanswerable": sum(ua) / len(ua),
         "answer_answerable": sum(ans) / len(ans),
@@ -425,7 +436,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
             )
         )
     judge_df = pd.DataFrame([s for s, _ in judged])
-    answered = [not r.answer.abstained for r in answerable]
+    is_answered = [answered(r.answer) for r in answerable]
 
     per_query = pd.concat(
         [
@@ -433,6 +444,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
                 {
                     "query_id": [r.query_id for r in answerable],
                     "abstained": [r.answer.abstained for r in answerable],
+                    "refused": [r.answer.refused for r in answerable],
                     "top1": [r.hits[0].score for r in answerable],
                     "answer": [r.answer.text for r in answerable],
                 }
@@ -445,6 +457,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
     metrics = {
         "recall@10": float(ret.recall.mean()),
         "ndcg@10": float(ret.ndcg.mean()),
+        **recall_by_content(ret),
         **{c: float(ragas_df[c].mean()) for c in ragas_df.columns},
         **{f"judge_{c}": float(judge_df[c].mean()) for c in JUDGE_CRITERIA},
         **abstain_scores(results),
@@ -463,10 +476,13 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         "label": label,
         "index": INDEX_NAME,
         "metrics": metrics,
-        "n_answered": sum(answered),
+        "n_answered": sum(is_answered),
+        "n_refused": sum(r.answer.refused for r in results),
         "nan": {  # scores RAGAS failed to compute; abstains are not scored by design
-            "faithfulness": int(ragas_df.faithfulness[answered].isna().sum()),
-            "answer_relevancy": int(ragas_df.answer_relevancy[answered].isna().sum()),
+            "faithfulness": int(ragas_df.faithfulness[is_answered].isna().sum()),
+            "answer_relevancy": int(
+                ragas_df.answer_relevancy[is_answered].isna().sum()
+            ),
             "context_precision": int(ragas_df.context_precision.isna().sum()),
             "context_recall": int(ragas_df.context_recall.isna().sum()),
         },
@@ -487,6 +503,7 @@ def print_run(record: dict) -> None:
         mark = "  FAILED" if m in record["failed"] else ""
         print(f"  {m:22s} {v:.4f}{mark}")
     print(f"  answered (scored by faithfulness, relevancy): {record['n_answered']}")
+    print(f"  refused (not gated): {record['n_refused']}")
     print("  NaN (RAGAS failed):", record["nan"])
     print("  cost $:", {k: round(v, 4) for k, v in record["cost_usd"].items()})
     verdict = "PASS" if record["passed"] else f"FAIL {record['failed']}"
@@ -507,40 +524,19 @@ def main() -> None:
     queries = load_queries()
     sample = make_sample(queries)
     in_sample = queries["query_id"].isin(sample["answerable"])
-    unanswerable = [
-        json.loads(line)["query"] for line in UNANSWERABLE_PATH.open(encoding="utf-8")
-    ]
-
-    retriever = Retriever()
-    res = retrieval_scores(queries, retriever)
-    ua_top1 = [retriever.search(u)[0].score for u in unanswerable]
-
-    threshold = abstain_threshold(res.loc[~in_sample, "top1"].tolist())
-    sample_top1 = res.loc[in_sample, "top1"]
+    res = retrieval_scores(queries, Retriever())
     n_visual = int(queries.loc[in_sample, "visual"].sum())
     n_many_gold = int((queries.gold.map(len) > EVAL_K).sum())
     print(f"index {INDEX_NAME}, {len(queries)} queries, page-level @{EVAL_K}")
     print(f"recall@{EVAL_K}: {res.recall.mean():.4f}")
     print(f"NDCG@{EVAL_K}:   {res.ndcg.mean():.4f}")
+    for name, value in recall_by_content(res).items():
+        print(f"{name}: {value:.4f}")
     print(f"queries with < {EVAL_K} distinct pages in top chunks: {res.short.sum()}")
     print(f"queries with > {EVAL_K} gold pages: {n_many_gold}")
     print(
         f"sample: {len(sample['answerable'])} answerable ({n_visual} visual)"
         f" + {len(sample['unanswerable'])} unanswerable"
-    )
-    print(
-        f"\nthreshold = p{ABSTAIN_PERCENTILE:g} of top-1 on the"
-        f" {int((~in_sample).sum())} non-sample queries: {threshold:.4f}"
-    )
-    print(f"ABSTAIN_SCORE in config: {ABSTAIN_SCORE:.4f}")
-    print("measured at that threshold (never tuned on these):")
-    n_low = int((sample_top1 < threshold).sum())
-    print(f"  sample answerable below it: {n_low}/{len(sample_top1)}")
-    n_ua = sum(s < threshold for s in ua_top1)
-    print(f"  unanswerable below it: {n_ua}/{len(ua_top1)}")
-    print(
-        f"  top-1 ranges  answerable {res.top1.min():.3f}-{res.top1.max():.3f}"
-        f"  unanswerable {min(ua_top1):.3f}-{max(ua_top1):.3f}"
     )
 
 

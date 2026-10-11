@@ -1,6 +1,9 @@
-"""Ingest: 52 FDA PDFs -> Page -> Chunk -> data/chunks.jsonl -> Pinecone.
+"""Ingest: 52 FDA PDFs -> Page -> Chunk (+ vision chunks) -> chunks.jsonl -> Pinecone.
 
-Run once per index version:  python -m multimodal_rag.ingest
+Full build from the PDFs:  python -m multimodal_rag.ingest
+New index version from the committed text chunks + data/vision.jsonl, without
+re-reading the PDFs (keeps text byte-identical to the previous index):
+    python -m multimodal_rag.ingest vision
 """
 
 import io
@@ -8,6 +11,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -44,6 +48,7 @@ from multimodal_rag.config import (
     PROJECT_DIR,
     REGION,
     UPSERT_BATCH_SIZE,
+    VISION_PATH,
 )
 from multimodal_rag.contracts import Chunk, Page
 
@@ -196,6 +201,37 @@ def chunk_page(
     ]
 
 
+def vision_chunks(
+    descriptions: list[dict], text_chunks: list[Chunk], count: Callable[[str], int]
+) -> list[Chunk]:
+    """`kind="vision"` chunks for `descriptions` ({doc_id, page, text}, page
+    0-indexed), on the same page as the description.
+
+    Chunk numbers continue after the page's text chunks (`doc_id-page-n`), so ids
+    stay deterministic. A description over MAX_TOKENS is split like page text.
+    """
+    n_text: dict[tuple[str, int], int] = {}
+    for c in text_chunks:
+        n_text[(c.doc_id, c.page)] = n_text.get((c.doc_id, c.page), 0) + 1
+    out: list[Chunk] = []
+    for d in descriptions:
+        doc_id, page, text = d["doc_id"], d["page"], d["text"]
+        pieces = [text] if count(text) <= MAX_TOKENS else split_to_limit(text, count)
+        first = n_text.get((doc_id, page), 0)
+        out.extend(
+            Chunk(f"{doc_id}-{page}-{first + i}", doc_id, page, t, count(t), "vision")
+            for i, t in enumerate(pieces)
+        )
+    return out
+
+
+def with_vision(text_chunks: list[Chunk], count: Callable[[str], int]) -> list[Chunk]:
+    """`text_chunks` followed by the vision chunks built from VISION_PATH."""
+    with VISION_PATH.open(encoding="utf-8") as f:
+        descriptions = [json.loads(line) for line in f]
+    return text_chunks + vision_chunks(descriptions, text_chunks, count)
+
+
 def write_chunks(chunks: list[Chunk], path: Path) -> None:
     """Write one JSON object per chunk (the `Chunk` fields), in chunk order."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -266,8 +302,11 @@ def upsert(chunks: list[Chunk]) -> int:
 
 
 def main() -> None:
-    """Load all PDFs, chunk, write chunks.jsonl, embed + upsert, print a summary."""
+    """Build chunks (from the PDFs, or `vision`: from the committed text chunks),
+    add the vision chunks, write chunks.jsonl, embed + upsert, print a summary."""
     from transformers import AutoTokenizer
+
+    from multimodal_rag.retrieve import load_chunks
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_dotenv(PROJECT_DIR / ".env")
@@ -275,6 +314,15 @@ def main() -> None:
 
     def count(text: str) -> int:
         return len(tok(text, add_special_tokens=False, verbose=False)["input_ids"])
+
+    if sys.argv[1:2] == ["vision"]:
+        text = [c for c in load_chunks().values() if c.kind == "text"]
+        chunks = with_vision(text, count)
+        write_chunks(chunks, CHUNKS_PATH)
+        print(f"text chunks: {len(text)}  vision chunks: {len(chunks) - len(text)}")
+        print(f"max tokens: {max(c.n_tokens for c in chunks)}")
+        print(f"vectors in {INDEX_NAME}/{NAMESPACE}: {upsert(chunks)}")
+        return
 
     meta = pd.read_parquet(DOCS_METADATA_PATH)
     t0 = time.monotonic()
@@ -286,6 +334,7 @@ def main() -> None:
             pages.append(page)
             chunks.extend(chunk_page(page, elements, row.doc_type == "book", count))
         log.info("%s: %d pages", row.doc_id, len(loaded))
+    chunks = with_vision(chunks, count)
     write_chunks(chunks, CHUNKS_PATH)
 
     ocr = [p for p in pages if p.ocr]

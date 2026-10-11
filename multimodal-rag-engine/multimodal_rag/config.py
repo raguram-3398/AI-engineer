@@ -27,7 +27,7 @@ EMBED_DIM: int = 384
 EMBED_BATCH_SIZE: int = 32
 
 # Pinecone
-INDEX_NAME: str = "fda-bge-small-en-v1-5-v1"  # bump the suffix on every re-index
+INDEX_NAME: str = "fda-bge-small-en-v1-5-v2"  # bump the suffix on every re-index
 NAMESPACE: str = "fda"
 METRIC: str = "cosine"
 CLOUD: str = "aws"
@@ -63,8 +63,16 @@ ANSWER_MAX_TOKENS: int = (
 PRICE_IN_PER_MTOK: float = 0.10  # Haiku 5.5, prompts <= 100k tokens (pricing page)
 PRICE_OUT_PER_MTOK: float = 0.50
 ABSTAIN_TEXT: str = "The documents do not contain the answer."
-ABSTAIN_PERCENTILE: float = 5.0  # % of answerable non-sample queries below threshold
-ABSTAIN_SCORE: float = 0.6837  # p5 top-1 of the 304 non-sample queries (Day 28)
+REFUSAL_TEXT: str = "The model declined to answer this question."
+
+# Vision descriptions (Day 30)
+VISION_PATH: Path = DATA_DIR / "vision.jsonl"  # one description per low-text slide
+VISION_MAX_CHARS: int = 300  # slide pages with less chunk text get a description
+# 100 dpi = 1000x750 px per slide (~970 visual tokens); on 3 measured slides the
+# descriptions read every label and value as well as at 150 dpi
+VISION_DPI: int = 100
+VISION_MAX_TOKENS: int = 8192  # thinking counts; measured max 1,581 output tokens
+VISION_CONTENT: tuple[str, ...] = ("Chart", "Infographic", "Image")  # recall split
 
 # Eval pipeline (Day 29)
 SCORES_PATH: Path = DATA_DIR / "scores.jsonl"  # one line per full eval run

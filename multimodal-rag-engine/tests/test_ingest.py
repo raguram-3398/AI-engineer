@@ -16,8 +16,8 @@ from multimodal_rag.config import (
     MAX_TOKENS,
     PDF_DIR,
 )
-from multimodal_rag.contracts import Page
-from multimodal_rag.ingest import chunk_page, load_pdf, split_to_limit
+from multimodal_rag.contracts import Chunk, Page
+from multimodal_rag.ingest import chunk_page, load_pdf, split_to_limit, vision_chunks
 
 needs_dataset = pytest.mark.skipif(
     not PDF_DIR.is_dir(), reason="dataset is gitignored; not present here"
@@ -105,6 +105,23 @@ def test_book_page_chunks_stay_on_page_and_under_limit(count) -> None:
 
 def test_empty_page_yields_no_chunk(count) -> None:
     assert chunk_page(Page("deck", 3, "", ocr=True), [], False, count) == []
+
+
+def test_vision_chunks_continue_page_numbering_and_respect_limit(count) -> None:
+    """Vision ids continue after the page's text chunks (no collision), keep the
+    0-indexed page, and a long description is split under MAX_TOKENS."""
+    text = [Chunk(f"deck-0-{n}", "deck", 0, "t", 1, "text") for n in range(2)]
+    long = " ".join(["The bar for 2019 shows 48 novel approvals."] * 80)
+    descriptions = [
+        {"doc_id": "deck", "page": 0, "text": "Pie chart: 60% small molecules."},
+        {"doc_id": "deck", "page": 7, "text": long},  # page with no text chunk
+    ]
+    out = vision_chunks(descriptions, text, count)
+    assert out[0].chunk_id == "deck-0-2" and out[0].page == 0
+    assert all(c.kind == "vision" for c in out)
+    page7 = [c for c in out if c.page == 7]
+    assert len(page7) > 1 and page7[0].chunk_id == "deck-7-0"
+    assert all(c.n_tokens <= MAX_TOKENS for c in out)
 
 
 @pytest.mark.skipif(not CHUNKS_PATH.is_file(), reason="run ingest first")
