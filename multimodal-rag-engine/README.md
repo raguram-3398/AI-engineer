@@ -11,7 +11,7 @@ flowchart TB
   subgraph OFFLINE["Offline · run once per index version"]
     PDF["52 FDA PDFs<br/>2,313 pages"] --> LOAD["Load pages<br/>text + OCR on 162 pages<br/>(Day 27)"]
     LOAD --> CHUNK["Chunk<br/>page-safe, ≤510 BGE tokens<br/>(Day 27)"]
-    SLIDES["569 low-text slides"] --> VIS["Vision descriptions<br/>Haiku (Day 30)"]
+    SLIDES["524 low-text slides"] --> VIS["Vision descriptions<br/>Haiku (Day 30)"]
     VIS --> CHUNK
     CHUNK --> EMB["Embed<br/>BGE-small (Day 27)"]
     EMB --> PC[("Pinecone<br/>index vN")]
@@ -26,9 +26,7 @@ flowchart TB
     VEC --> RRF["RRF fuse<br/>(Day 32)"]
     BM --> RRF
     RRF --> RR["Rerank top 20<br/>(Day 33)"]
-    RR --> TH{"Top score ≥<br/>threshold?"}
-    TH -- no --> ABS["Abstain<br/>no Claude call"]
-    TH -- yes --> ANS["Answer + citations<br/>Haiku (Day 28)"]
+    RR --> ANS["Answer + citations, or abstain<br/>Haiku (Day 28)"]
     ANS --> SE{"Self-check ≥ 6/10?<br/>(Day 34)"}
     SE -- "no, once" --> RW
     SE -- yes --> OUT["Cited answer<br/>PDF + page"]
@@ -65,7 +63,7 @@ Package `multimodal_rag/`.
 | `data/eval/unanswerable_en.jsonl` | 20 unanswerable queries | 27 |
 | `data/eval/sample.json` | IDs of the fixed 60 + 20 eval sample | 28 |
 | `data/eval/followups.jsonl` | 10 two-turn conversations | 31 |
-| `data/vision.jsonl` | 569 slide descriptions | 30 |
+| `data/vision.jsonl` | 524 slide descriptions | 30 |
 | `data/scores.jsonl` | Timestamped eval log | 29 |
 
 ### Stage contracts
@@ -82,7 +80,7 @@ Frozen dataclasses passed between stages:
 
 **Pinecone record:** id = `chunk_id`, 384-d vector, metadata = `doc_id`, `page`, `text`, `kind`, `embedding_model`. Index `fda-bge-small-en-v1-5-v1` (the version suffix goes up on re-index), namespace `fda`. Embedding model: `BAAI/bge-small-en-v1.5`.
 
-**Flags** (environment variables, only the measured ablations): `VISION`, `REWRITE`, `HYDE`, `RETRIEVAL=vector|hybrid`, `RERANK`, `SELF_CHECK`.
+**Flags** (environment variables, only the measured ablations): `REWRITE`, `HYDE`, `RETRIEVAL=vector|hybrid`, `RERANK`, `SELF_CHECK`. Vision descriptions have no flag: the index version (`INDEX_NAME`) switches them.
 
 ### Chunking rule
 
@@ -110,9 +108,9 @@ every final chunk ≤ 510 BGE tokens and never crosses a page
 
 ## Retrieval and answering (Day 28)
 
-Try one question: `python -m multimodal_rag.answer "your question"`. Retrieval baseline and threshold: `python -m multimodal_rag.evaluate` (free, ~40 s, no Claude calls).
+Try one question: `python -m multimodal_rag.answer "your question"`. Retrieval baseline: `python -m multimodal_rag.evaluate` (free, ~40 s, no Claude calls).
 
-Query → BGE vector (with the BGE query instruction) → Pinecone top 20 → chunk text from `data/chunks.jsonl` → if the top score is below `ABSTAIN_SCORE`, abstain with no Claude call → otherwise the top 10 chunks go to Haiku as one plain-text document each, with citations on. A citation is kept only if its `cited_text` equals `chunk.text[start:end]` of the chunk it points to. Timeouts: Pinecone 10 s, Claude 30 s per attempt (the SDKs retry on their own). Pinecone timeouts, connection errors and 5xx, Claude API errors, and any `stop_reason` other than `end_turn` raise `QueryError`.
+Query → BGE vector (with the BGE query instruction) → Pinecone top 20 → chunk text from `data/chunks.jsonl` → the top 10 chunks (no score threshold since Day 30) go to Haiku as one plain-text document each, with citations on. A citation is kept only if its `cited_text` equals `chunk.text[start:end]` of the chunk it points to. Timeouts: Pinecone 10 s, Claude 30 s per attempt (the SDKs retry on their own). Pinecone timeouts, connection errors and 5xx, Claude API errors, and any `stop_reason` other than `end_turn` raise `QueryError`.
 
 ### Day 28 results (index `fda-bge-small-en-v1-5-v1`)
 

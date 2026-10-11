@@ -82,11 +82,10 @@ def test_existing_sample_is_never_rebuilt(tmp_path, monkeypatch) -> None:
     assert evaluate.make_sample(queries=None)["answerable"] == [7]
 
 
-def _result(reference: str | None, abstained: bool) -> Result:
+def _result(reference: str | None, abstained: bool, refused: bool = False) -> Result:
     text = ABSTAIN_TEXT if abstained else "An answer."
-    return Result(
-        "q", "question?", reference, [], Answer(text, [], abstained, 0.0, 0.0)
-    )
+    answer = Answer(text, [], abstained, refused, 0.0, 0.0)
+    return Result("q", "question?", reference, [], answer)
 
 
 def test_abstain_scores_both_ways() -> None:
@@ -101,6 +100,19 @@ def test_abstain_scores_both_ways() -> None:
     ]
     assert abstain_scores(results) == {
         "abstain_unanswerable": pytest.approx(2 / 3),
+        "answer_answerable": 0.5,
+    }
+
+
+def test_refusal_counts_against_both_abstain_scores() -> None:
+    results = [
+        _result("ref", abstained=False),
+        _result("ref", abstained=False, refused=True),
+        _result(None, abstained=True),
+        _result(None, abstained=False, refused=True),
+    ]
+    assert abstain_scores(results) == {
+        "abstain_unanswerable": 0.5,
         "answer_answerable": 0.5,
     }
 

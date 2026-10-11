@@ -11,7 +11,6 @@ import anthropic
 from dotenv import load_dotenv
 
 from multimodal_rag.config import (
-    ABSTAIN_SCORE,
     ABSTAIN_TEXT,
     ANSWER_K,
     ANSWER_MAX_TOKENS,
@@ -20,8 +19,9 @@ from multimodal_rag.config import (
     PRICE_IN_PER_MTOK,
     PRICE_OUT_PER_MTOK,
     PROJECT_DIR,
+    REFUSAL_TEXT,
 )
-from multimodal_rag.contracts import Answer, Citation, Hit
+from multimodal_rag.contracts import Answer, Chunk, Citation, Hit
 from multimodal_rag.retrieve import QueryError, Retriever
 
 log = logging.getLogger(__name__)
@@ -34,12 +34,16 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_documents(hits: list[Hit]) -> list[dict]:
-    """One citable plain-text document per chunk; list position = document_index.
+def doc_title(chunk: Chunk) -> str:
+    """Document title Claude sees: the 1-indexed PDF page a reader would look up
+    (data structures keep the 0-indexed page), marked when the text is a
+    generated description rather than the PDF's own words."""
+    page = f"{chunk.doc_id} p.{chunk.page + 1}"
+    return f"generated visual description, {page}" if chunk.kind == "vision" else page
 
-    The title shows the 1-indexed PDF page a reader would look up; every data
-    structure keeps the 0-indexed page.
-    """
+
+def build_documents(hits: list[Hit]) -> list[dict]:
+    """One citable plain-text document per chunk; list position = document_index."""
     return [
         {
             "type": "document",
@@ -48,7 +52,7 @@ def build_documents(hits: list[Hit]) -> list[dict]:
                 "media_type": "text/plain",
                 "data": h.chunk.text,
             },
-            "title": f"{h.chunk.doc_id} p.{h.chunk.page + 1}",
+            "title": doc_title(h.chunk),
             "citations": {"enabled": True},
         }
         for h in hits
@@ -59,7 +63,8 @@ def verify_citations(content: list, hits: list[Hit]) -> list[Citation]:
     """Citations from Claude's text blocks whose quote matches the chunk exactly.
 
     A citation is kept only if `cited_text == chunk.text[start:end]` for the chunk
-    at its `document_index`; any other is dropped and logged.
+    at its `document_index`; any other is dropped and logged. `generated` is set
+    for quotes from vision chunks.
     """
     out: list[Citation] = []
     for block in content:
@@ -70,8 +75,11 @@ def verify_citations(content: list, hits: list[Hit]) -> list[Citation]:
                 log.warning("dropped unverified citation of %s", chunk.chunk_id)
                 continue
             score = hits[c.document_index].score
+            generated = chunk.kind == "vision"
             out.append(
-                Citation(chunk.chunk_id, chunk.doc_id, chunk.page, span, score, False)
+                Citation(
+                    chunk.chunk_id, chunk.doc_id, chunk.page, span, score, generated
+                )
             )
     return out
 
@@ -85,15 +93,19 @@ def cost_usd(usage) -> float:
 
 
 def answer(question: str, hits: list[Hit], client: anthropic.Anthropic) -> Answer:
-    """Abstain without calling Claude if the best hit scores below ABSTAIN_SCORE;
-    otherwise answer from the top ANSWER_K hits with verified citations.
+    """Answer from the top ANSWER_K hits with verified citations; abstain without
+    calling Claude only if there are no hits. Claude decides every other abstain
+    (no score threshold since Day 30: it caught no unanswerable query Claude
+    missed and blocked answerable ones with the gold page in the top 10).
 
-    Raises QueryError if the Claude call fails or does not end with `end_turn`
+    If Claude stops with `refusal`, returns REFUSAL_TEXT with `refused=True`:
+    partial text and citations are discarded, the cost is kept. Raises
+    QueryError if the call fails or stops any other way than `end_turn`
     (e.g. `max_tokens` cut the answer and its citations short).
     """
     t0 = time.monotonic()
-    if not hits or hits[0].score < ABSTAIN_SCORE:
-        return Answer(ABSTAIN_TEXT, [], True, 0.0, time.monotonic() - t0)
+    if not hits:
+        return Answer(ABSTAIN_TEXT, [], True, False, 0.0, time.monotonic() - t0)
 
     hits = hits[:ANSWER_K]
     try:
@@ -121,13 +133,15 @@ def answer(question: str, hits: list[Hit], client: anthropic.Anthropic) -> Answe
         msg.usage.output_tokens,
         cost,
     )
+    if msg.stop_reason == "refusal":
+        return Answer(REFUSAL_TEXT, [], False, True, cost, time.monotonic() - t0)
     if msg.stop_reason != "end_turn":
         raise QueryError(f"Claude stopped with {msg.stop_reason} (cost ${cost:.6f})")
 
     text = "".join(b.text for b in msg.content if b.type == "text").strip()
     citations = verify_citations(msg.content, hits)
     abstained = text == ABSTAIN_TEXT and not citations
-    return Answer(text, citations, abstained, cost, time.monotonic() - t0)
+    return Answer(text, citations, abstained, False, cost, time.monotonic() - t0)
 
 
 def ask(question: str, retriever: Retriever, client: anthropic.Anthropic) -> Answer:
@@ -138,6 +152,7 @@ def ask(question: str, retriever: Retriever, client: anthropic.Anthropic) -> Ans
         result.text,
         result.citations,
         result.abstained,
+        result.refused,
         result.cost_usd,
         time.monotonic() - t0,
     )
@@ -152,9 +167,11 @@ def main() -> None:
     print(result.text, "\n")
     for c in result.citations:
         where = f"{c.doc_id} p.{c.page + 1} [{c.chunk_id}, {c.score:.3f}]"
-        print(f"- {where} {c.cited_text!r}")
+        mark = " (generated description)" if c.generated else ""
+        print(f"- {where}{mark} {c.cited_text!r}")
     print(
-        f"\nabstained={result.abstained} cost=${result.cost_usd:.6f} "
+        f"\nabstained={result.abstained} refused={result.refused} "
+        f"cost=${result.cost_usd:.6f} "
         f"latency={result.latency_s:.2f}s"
     )
 

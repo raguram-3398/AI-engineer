@@ -30,7 +30,7 @@ class Chunk:
     page: int
     text: str
     n_tokens: int
-    kind: str  # "text" today; "vision" from Day 30
+    kind: str  # "text" (PDF text) or "vision" (generated description, Day 30)
 
 
 @dataclass(frozen=True)
@@ -61,13 +61,15 @@ class Citation:
 class Answer:
     """What the pipeline returns for one question.
 
-    `abstained` = no answer from the documents (score below the threshold, or
-    Claude replied with ABSTAIN_TEXT and cited nothing). `cost_usd` is 0 when
-    Claude was not called.
+    `abstained` = no answer from the documents (no hits, or Claude replied with
+    ABSTAIN_TEXT and cited nothing). `refused` = Claude
+    stopped with `refusal`: `text` is REFUSAL_TEXT, no citations, not an abstain.
+    `cost_usd` is 0 when Claude was not called.
     """
 
     text: str
     citations: list[Citation]
     abstained: bool
+    refused: bool
     cost_usd: float
     latency_s: float
