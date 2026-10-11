@@ -1,13 +1,26 @@
-"""Retrieval metrics on hand-computed cases, chunk-to-page dedupe, the fixed sample."""
+"""Retrieval metrics on hand-computed cases, chunk-to-page dedupe, the fixed sample,
+abstain accuracy and the regression gate."""
 
 import json
 import math
 
 import pytest
 
-from multimodal_rag.config import SAMPLE_PATH, SAMPLE_SIZE
-from multimodal_rag.contracts import Chunk, Hit
-from multimodal_rag.evaluate import ndcg_at_k, ranked_pages, recall_at_k
+from multimodal_rag.config import (
+    ABSTAIN_TEXT,
+    GATE_THRESHOLDS,
+    SAMPLE_PATH,
+    SAMPLE_SIZE,
+)
+from multimodal_rag.contracts import Answer, Chunk, Hit
+from multimodal_rag.evaluate import (
+    Result,
+    abstain_scores,
+    gate,
+    ndcg_at_k,
+    ranked_pages,
+    recall_at_k,
+)
 
 
 def _hit(doc: str, page: int, n: int = 0) -> Hit:
@@ -67,3 +80,56 @@ def test_existing_sample_is_never_rebuilt(tmp_path, monkeypatch) -> None:
     path.write_text(json.dumps({"seed": 1, "answerable": [7], "unanswerable": []}))
     monkeypatch.setattr(evaluate, "SAMPLE_PATH", path)
     assert evaluate.make_sample(queries=None)["answerable"] == [7]
+
+
+def _result(reference: str | None, abstained: bool) -> Result:
+    text = ABSTAIN_TEXT if abstained else "An answer."
+    return Result(
+        "q", "question?", reference, [], Answer(text, [], abstained, 0.0, 0.0)
+    )
+
+
+def test_abstain_scores_both_ways() -> None:
+    """A false abstain on an answerable query counts against answer_answerable;
+    an answered unanswerable query counts against abstain_unanswerable."""
+    results = [
+        _result("ref", abstained=False),
+        _result("ref", abstained=True),  # false abstain
+        _result(None, abstained=True),
+        _result(None, abstained=True),
+        _result(None, abstained=False),  # answered a trap
+    ]
+    assert abstain_scores(results) == {
+        "abstain_unanswerable": pytest.approx(2 / 3),
+        "answer_answerable": 0.5,
+    }
+
+
+BASE = {m: 0.8 for m in GATE_THRESHOLDS}
+
+
+def test_gate_passes_unchanged_and_small_drops() -> None:
+    assert gate(BASE, BASE) == []
+    within = {**BASE, "faithfulness": 0.8 - GATE_THRESHOLDS["faithfulness"]}
+    assert gate(within, BASE) == []
+
+
+def test_gate_fails_on_drop_beyond_threshold() -> None:
+    worse = {
+        **BASE,
+        "answer_relevancy": 0.8 - GATE_THRESHOLDS["answer_relevancy"] - 0.01,
+    }
+    assert gate(worse, BASE) == ["answer_relevancy"]
+
+
+def test_gate_fails_on_any_abstain_drop_with_zero_threshold() -> None:
+    worse = {**BASE, "abstain_unanswerable": 0.8 - 1 / 20}
+    assert gate(worse, BASE, {**GATE_THRESHOLDS, "abstain_unanswerable": 0.0}) == [
+        "abstain_unanswerable"
+    ]
+
+
+def test_gate_ignores_improvements_and_fails_on_nan() -> None:
+    better = {m: 0.9 for m in BASE}
+    assert gate(better, BASE) == []
+    assert gate({**BASE, "faithfulness": float("nan")}, BASE) == ["faithfulness"]
