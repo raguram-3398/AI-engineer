@@ -42,6 +42,22 @@ class Hit:
 
 
 @dataclass(frozen=True)
+class SearchQuery:
+    """What retrieval embeds for one user question (Day 31).
+
+    `question` is what Claude answers: the user's question, or for a follow-up
+    its standalone rewrite (`answer` takes no chat history). `text` is what BGE
+    embeds; `passage` = embed it as a passage (HyDE), not as a query.
+    `cost_usd` is the rewrite and HyDE calls, 0 when neither ran.
+    """
+
+    question: str
+    text: str
+    passage: bool
+    cost_usd: float
+
+
+@dataclass(frozen=True)
 class Citation:
     """A verified quote: `cited_text` is exactly `chunk.text[start:end]` of `chunk_id`.
 

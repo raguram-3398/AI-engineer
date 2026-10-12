@@ -52,7 +52,7 @@ Package `multimodal_rag/`.
 | `retrieve.py` | Vector search, BM25, RRF, rerank, rewrite/HyDE | 28, 31–33 |
 | `answer.py` | Haiku call with citations, citation verification, abstain, cost, self-check | 28, 34 |
 | `vision.py` | Slide image → Haiku description | 30 |
-| `evaluate.py` | Retrieval metrics, RAGAS, LLM judge, abstain score, gate, score log | 28–29 |
+| `evaluate.py` | Retrieval metrics, RAGAS, LLM judge, abstain score, gate, score log, follow-up tests | 28–29, 31 |
 | `streamlit_app.py` (repo root) | One-page UI | 35 |
 
 ### Data files
@@ -74,6 +74,7 @@ Frozen dataclasses passed between stages:
 |---|---|---|
 | `Page` | `doc_id`, `page` (0-indexed), `text`, `ocr: bool` | ingest → chunking |
 | `Chunk` | `chunk_id` (`doc_id-page-n`), `doc_id`, `page`, `text`, `n_tokens`, `kind` (`text` or `vision`) | chunking → index, BM25, answer |
+| `SearchQuery` | `question` (what Claude answers), `text` (what BGE embeds), `passage: bool` (HyDE), `cost_usd` | retrieve → retrieve, answer, eval |
 | `Hit` | `chunk: Chunk`, `score` | retrieve → answer, eval |
 | `Citation` | `chunk_id`, `doc_id`, `page`, `cited_text`, `score`, `generated: bool` | answer → UI, eval |
 | `Answer` | `text`, `citations`, `abstained`, `cost_usd`, `latency_s`, `confidence` (added Day 34) | answer → UI, eval |
@@ -195,6 +196,50 @@ v2 run 1 failed the gate on answer relevancy alone. A sandbox run of the same co
 `ABSTAIN_SCORE` removed by the Day 29 rule: on v2 it caught 1/20 unanswerable (ua01, which Claude also abstains on) and blocked 2 answerable queries with the gold page in the top 10 (218 rank 3, 334 ranks 2 and 4). Measured as its own run: answered 48 → 49/60, unanswerable 20/20, gate PASS. Index v1 deleted after acceptance.
 
 Open: answer relevancy moved 0.868 → 0.848 → 0.833 across two passed runs; each run is compared only to the last passed one, and its 0.05 threshold is narrower than the observed spread (0.787–0.868).
+
+## Query rewriting and HyDE (Day 31)
+
+Run: `python -m multimodal_rag.evaluate` (free eval) with `REWRITE=1` or `HYDE=1` set; `python -m multimodal_rag.evaluate followups` (the 10 two-turn conversations).
+
+`search_query` decides what is embedded for a question. A follow-up (non-empty chat history = earlier user questions) is always rewritten by Haiku into a standalone question, which is searched and answered. `REWRITE=1` rewrites every question for search only; Claude still answers the user's words. `HYDE=1` has Haiku write a ~100-word FDA-style passage answering the question and embeds it on BGE's passage side (no query prefix), like the indexed chunks. The rewrite / HyDE cost is added to `Answer.cost_usd`.
+
+The rewriter is a forced tool call (`record_query`, one `query` field): the query arrives as JSON, so commentary cannot leak into it, and a forced `tool_choice` turns thinking off. Its prompt allows only resolving references with words copied from the earlier questions, and says to return a standalone question unchanged.
+
+### Day 31 results (sandbox, index v2; free retrieval metrics, page-level @10)
+
+| Queries | off | `REWRITE=1` (first prompt) | `REWRITE=1` (final prompt) | `HYDE=1` |
+|---|---|---|---|---|
+| all 364: recall / NDCG | 0.5787 / 0.5180 | 0.5832 / 0.5219 | 0.5787 / 0.5180 | 0.5835 / 0.5204 |
+| **304 non-sample (decides the flags)**: recall / NDCG | **0.5952 / 0.5298** | 0.5971 / 0.5283 | 0.5952 / 0.5298 | 0.5930 / 0.5240 |
+| 57 keyword: recall / NDCG | 0.5235 / 0.4828 | 0.4941 / 0.4641 | 0.5235 / 0.4828 | 0.5548 / 0.4988 |
+| 47 keyword non-sample: recall / NDCG | 0.5255 / 0.4682 | 0.4877 / 0.4440 | 0.5255 / 0.4682 | 0.5562 / 0.4909 |
+| recall Chart / Infographic / Image | 0.4374 / 0.4500 / 0.4329 | 0.4427 / 0.4346 / 0.4193 | 0.4374 / 0.4500 / 0.4329 | 0.4528 / 0.4922 / 0.4168 |
+| Claude cost, 364 queries | $0 | $0.013 | $0.039 | $0.120 |
+| eval wall time (8 parallel calls) | 41 s | 82 s | – | 217 s |
+
+Ram's Mac, flags off: 0.5787 / 0.5180 (all 364), identical to the sandbox.
+
+Follow-ups (10 conversations in `data/eval/followups.jsonl`; turn 2 is a non-sample dataset query reworded to depend on turn 1, gold pages inherited from that query). Rewrites vary from run to run, so each prompt was run several times:
+
+| Follow-up searched as | recall@10 per run | NDCG@10 per run | rewrites with facts from outside the conversation |
+|---|---|---|---|
+| raw follow-up | 0.483 | 0.429 | – |
+| rewritten, first prompt (4 sandbox runs + 1 Mac run) | 0.578, 0.578, 0.528, 0.458; Mac 0.578 | 0.413, 0.400, 0.402, 0.330; Mac 0.432 | in most runs (below) |
+| rewritten, final prompt (2 sandbox runs + 1 Mac run) | 0.533, 0.483; Mac 0.558 | 0.395, 0.347; Mac 0.409 | 0 of 30 |
+| original dataset query (ceiling) | 0.570 | 0.464 | – |
+
+Rewrite cost for the 10: $0.0006–0.0011 per run.
+
+Findings:
+- Neither flag beats "off" on the 304 non-sample queries, so both stay off and no full eval ran.
+- First rewrite prompt: on the 57 "keyword" queries, which are already descriptive phrases ("prescription drugs included vs excluded under DSCSA"), 51 rewrites left recall unchanged and 4 lost pages through small wording changes. For example, query 224 lost its only gold page (recall 1.00 → 0) when "as it relates to" became "in".
+- First prompt on the follow-ups: the rewriter added facts it knew, against the prompt. Examples: c02 "four-letter suffix" (part of the answer); c04 "Federal Food, Drug, and Cosmetic Act section 301(ll)", "adulterated", "cannabidiol"; c10 "generic drug applications". Because a follow-up's rewrite is the question Claude answers, a leaked fact steers the answer.
+- First tightened prompt, still free text: one reply carried the model's own reasoning ("Wait—the rules say…") into the query. Hence the forced tool call.
+- Final prompt: no outside facts and no commentary in 30 rewrites (one Mac rewrite merged two copied words: "pharmaceuticalmanufacturing"). On standalone questions `REWRITE=1` now returns the question unchanged (identical metrics on all 364) at $0.039 per 364 queries, so the flag has no use on this dataset. Follow-up recall: 0.483 raw → 0.483–0.558 rewritten, against 0.458–0.578 for the first prompt. With 10 conversations and this run-to-run spread, the two prompts cannot be told apart on recall; the final prompt was chosen for what Claude is asked, not for recall.
+- c09 scores 0 under every rewrite and 0.2 at best, although the final rewrite names CDER and the COVID-19 response. It is a retrieval miss, not a rewrite problem.
+- HyDE raised recall on 16 keyword queries and lowered it on 4 (per-query diagnostic, $0.018). It helps when the slide's wording differs from the query's: query 95's gold page went from rank > 10 to found. It hurts when the generated passage is generic or has specifics of its own; query 163 lost its gold page.
+- HyDE makes retrieval nondeterministic: keyword recall was 0.5548 and 0.5555 in two runs. The flags-off retrieval metrics are deterministic.
+- HyDE on the 20 unanswerable queries: 20/20 still abstain (off: 20/20), 0 refusals, $0.019. Mean top-1 retrieval score rises 0.769 → 0.824: a passage matches passages more closely than a question does, so similarity scores are not comparable with and without HyDE.
 
 ## Indexing
 

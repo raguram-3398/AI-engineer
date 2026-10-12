@@ -1,5 +1,5 @@
 """Query-path edge cases: abstain without Claude, citation verification, the
-0-indexed page, early stop, Pinecone down. No network calls."""
+0-indexed page, early stop, Pinecone down, query transforms. No network calls."""
 
 from types import SimpleNamespace as NS
 
@@ -7,9 +7,9 @@ import pytest
 from pinecone.errors import PineconeTimeoutError
 
 from multimodal_rag.answer import answer, build_documents, verify_citations
-from multimodal_rag.config import ABSTAIN_TEXT, REFUSAL_TEXT
+from multimodal_rag.config import ABSTAIN_TEXT, QUERY_PREFIX, REFUSAL_TEXT
 from multimodal_rag.contracts import Chunk, Hit
-from multimodal_rag.retrieve import QueryError, Retriever
+from multimodal_rag.retrieve import QueryError, Retriever, search_query
 
 TEXT = "FDA approved 50 novel drugs in 2021. Most were small molecules."
 
@@ -45,9 +45,11 @@ class FakeClient:
         usage = NS(input_tokens=1000, output_tokens=100)
         self.response = NS(content=content, stop_reason=stop_reason, usage=usage)
         self.messages = self
+        self.calls: list[dict] = []
 
     def create(self, **kwargs) -> NS:
         assert "temperature" not in kwargs  # Haiku 5.5 rejects it
+        self.calls.append(kwargs)
         return self.response
 
 
@@ -139,3 +141,55 @@ def test_id_missing_from_chunk_file_raises() -> None:
     index = NS(query=lambda **kwargs: NS(matches=matches))
     with pytest.raises(QueryError, match="deck-7-2"):
         _retriever(index).search("q")
+
+
+def _reply(text: str) -> FakeClient:
+    return FakeClient([NS(type="text", text=text, citations=None)])
+
+
+def _query(text: str) -> FakeClient:
+    """A forced record_query tool call, as the rewriter receives it."""
+    return FakeClient([NS(type="tool_use", input={"query": text})], "tool_use")
+
+
+def test_no_flags_no_history_does_not_call_claude() -> None:
+    sq = search_query("q", NoCallClient(), rewrite_on=False, hyde_on=False)
+    assert (sq.question, sq.text, sq.passage, sq.cost_usd) == ("q", "q", False, 0.0)
+
+
+def test_follow_up_is_rewritten_with_history_and_answered_standalone() -> None:
+    """A follow-up's pronoun only resolves through the earlier question, and
+    `answer` takes no history, so Claude must get the standalone question."""
+    client = _query("What were the reasons for ANDA refuse-to-receive decisions?")
+    sq = search_query(
+        "What were the main reasons for those?",
+        client,
+        ["What portion of ANDAs were refused in FY2018?"],
+        rewrite_on=False,
+        hyde_on=False,
+    )
+    prompt = client.calls[0]["messages"][0]["content"]
+    assert "<earlier_question>What portion of ANDAs" in prompt
+    assert sq.question == sq.text == client.response.content[0].input["query"]
+    assert sq.cost_usd > 0
+
+
+def test_rewrite_flag_changes_search_not_the_question_answered() -> None:
+    sq = search_query("ANDAs FY12", _query("How many ANDAs in FY12?"), rewrite_on=True)
+    assert (sq.question, sq.text) == ("ANDAs FY12", "How many ANDAs in FY12?")
+
+
+def test_hyde_passage_embedded_without_query_prefix() -> None:
+    """BGE is asymmetric: the HyDE passage goes on the passage side, like the
+    indexed chunks; a question keeps QUERY_PREFIX."""
+    sq = search_query("q", _reply("FDA approved 50 drugs."), hyde_on=True)
+    assert sq.passage and sq.text == "FDA approved 50 drugs." and sq.question == "q"
+    seen: list[str] = []
+    r = _retriever(NS(query=lambda **kwargs: NS(matches=[])))
+    r.model = NS(
+        encode=lambda text, normalize_embeddings: seen.append(text)
+        or NS(tolist=lambda: [0.0])
+    )
+    r.search(sq.text, passage=sq.passage)
+    r.search("q")
+    assert seen == ["FDA approved 50 drugs.", QUERY_PREFIX + "q"]
