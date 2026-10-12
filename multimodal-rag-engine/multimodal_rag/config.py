@@ -1,5 +1,7 @@
-"""Constants for the Multimodal RAG Engine. Grows day by day; no runtime options."""
+"""Constants for the Multimodal RAG Engine. Grows day by day. The only runtime
+options are the measured ablation flags (environment variables, README: Flags)."""
 
+import os
 from pathlib import Path
 
 PROJECT_DIR: Path = Path(__file__).resolve().parents[1]
@@ -52,6 +54,14 @@ VISUAL_CONTENT: frozenset[str] = frozenset({"Chart", "Infographic", "Table", "Im
 QUERY_PREFIX: str = "Represent this sentence for searching relevant passages: "
 TOP_K: int = 20  # chunks fetched from Pinecone (also the Day 33 rerank budget)
 EVAL_K: int = 10  # distinct pages scored by recall@10 / NDCG@10
+
+# Query transforms (Day 31). REWRITE=1 / HYDE=1 in the environment turn them on.
+# A follow-up (non-empty chat history) is always rewritten, flag or not.
+REWRITE: bool = os.environ.get("REWRITE") == "1"
+HYDE: bool = os.environ.get("HYDE") == "1"
+REWRITE_MAX_TOKENS: int = 1024  # forced tool call, no thinking; one line
+HYDE_MAX_TOKENS: int = 2048  # thinking counts; the passage is ~100 words
+FOLLOWUPS_PATH: Path = EVAL_DIR / "followups.jsonl"  # 10 two-turn tests
 
 # Answer
 CLAUDE_MODEL: str = "claude-haiku-5-5"  # never pass `temperature` (400 on 5.5)

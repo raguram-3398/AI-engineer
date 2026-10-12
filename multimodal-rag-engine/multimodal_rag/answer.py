@@ -6,6 +6,7 @@ Try one question:  python -m multimodal_rag.answer "your question"
 import logging
 import sys
 import time
+from collections.abc import Sequence
 
 import anthropic
 from dotenv import load_dotenv
@@ -16,13 +17,11 @@ from multimodal_rag.config import (
     ANSWER_MAX_TOKENS,
     CLAUDE_MODEL,
     CLAUDE_TIMEOUT_S,
-    PRICE_IN_PER_MTOK,
-    PRICE_OUT_PER_MTOK,
     PROJECT_DIR,
     REFUSAL_TEXT,
 )
 from multimodal_rag.contracts import Answer, Chunk, Citation, Hit
-from multimodal_rag.retrieve import QueryError, Retriever
+from multimodal_rag.retrieve import QueryError, Retriever, cost_usd, search_query
 
 log = logging.getLogger(__name__)
 
@@ -84,14 +83,6 @@ def verify_citations(content: list, hits: list[Hit]) -> list[Citation]:
     return out
 
 
-def cost_usd(usage) -> float:
-    """Dollar cost of one Haiku call from its token usage."""
-    return (
-        usage.input_tokens * PRICE_IN_PER_MTOK
-        + usage.output_tokens * PRICE_OUT_PER_MTOK
-    ) / 1e6
-
-
 def answer(question: str, hits: list[Hit], client: anthropic.Anthropic) -> Answer:
     """Answer from the top ANSWER_K hits with verified citations; abstain without
     calling Claude only if there are no hits. Claude decides every other abstain
@@ -144,16 +135,26 @@ def answer(question: str, hits: list[Hit], client: anthropic.Anthropic) -> Answe
     return Answer(text, citations, abstained, False, cost, time.monotonic() - t0)
 
 
-def ask(question: str, retriever: Retriever, client: anthropic.Anthropic) -> Answer:
-    """Retrieve, then answer; `latency_s` covers both."""
+def ask(
+    question: str,
+    retriever: Retriever,
+    client: anthropic.Anthropic,
+    history: Sequence[str] = (),
+) -> Answer:
+    """Transform the question (follow-up rewrite, REWRITE, HYDE), retrieve, answer.
+
+    `history` = the conversation's earlier user questions, oldest first.
+    `cost_usd` includes the rewrite / HyDE calls; `latency_s` covers all steps.
+    """
     t0 = time.monotonic()
-    result = answer(question, retriever.search(question), client)
+    sq = search_query(question, client, history)
+    result = answer(sq.question, retriever.search(sq.text, passage=sq.passage), client)
     return Answer(
         result.text,
         result.citations,
         result.abstained,
         result.refused,
-        result.cost_usd,
+        result.cost_usd + sq.cost_usd,
         time.monotonic() - t0,
     )
 

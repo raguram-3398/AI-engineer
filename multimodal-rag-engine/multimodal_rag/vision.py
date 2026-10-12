@@ -18,7 +18,6 @@ import anthropic
 import pandas as pd
 from dotenv import load_dotenv
 
-from multimodal_rag.answer import cost_usd
 from multimodal_rag.config import (
     CLAUDE_MODEL,
     CLAUDE_TIMEOUT_S,
@@ -33,7 +32,7 @@ from multimodal_rag.config import (
     VISION_PATH,
 )
 from multimodal_rag.contracts import Chunk
-from multimodal_rag.retrieve import load_chunks
+from multimodal_rag.retrieve import cost_usd, load_chunks
 
 log = logging.getLogger(__name__)
 

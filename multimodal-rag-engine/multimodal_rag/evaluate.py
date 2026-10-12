@@ -4,6 +4,11 @@ Free retrieval eval (no Claude): page-level recall@10 and NDCG@10 on all 364
 English queries, split by visual content type, and the fixed eval sample.
     python -m multimodal_rag.evaluate
 
+Both follow the REWRITE / HYDE flags (Day 31), e.g. `HYDE=1 python -m ...`.
+
+Ten two-turn conversations (Claude rewrites the follow-ups; retrieval metrics only):
+    python -m multimodal_rag.evaluate followups
+
 Full eval (Claude): answers the fixed 60 + 20 sample, scores it with RAGAS, the
 Haiku judge and the abstain rule, gates it against the last passed run and
 appends it to data/scores.jsonl.
@@ -17,7 +22,7 @@ import random
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 import anthropic
@@ -25,7 +30,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from multimodal_rag.answer import answer, cost_usd
+from multimodal_rag.answer import answer
 from multimodal_rag.config import (
     ANSWER_K,
     CLAUDE_MODEL,
@@ -34,7 +39,9 @@ from multimodal_rag.config import (
     EMBED_MODEL,
     EVAL_K,
     EVAL_WORKERS,
+    FOLLOWUPS_PATH,
     GATE_THRESHOLDS,
+    HYDE,
     INDEX_NAME,
     JUDGE_MAX_TOKENS,
     PRICE_IN_PER_MTOK,
@@ -43,6 +50,7 @@ from multimodal_rag.config import (
     QRELS_PATH,
     QUERIES_PATH,
     RAGAS_MAX_TOKENS,
+    REWRITE,
     SAMPLE_PATH,
     SAMPLE_SEED,
     SAMPLE_SIZE,
@@ -51,8 +59,8 @@ from multimodal_rag.config import (
     VISION_CONTENT,
     VISUAL_CONTENT,
 )
-from multimodal_rag.contracts import Answer, Hit
-from multimodal_rag.retrieve import QueryError, Retriever
+from multimodal_rag.contracts import Answer, Hit, SearchQuery
+from multimodal_rag.retrieve import QueryError, Retriever, cost_usd, search_query
 
 Page = tuple[str, int]  # (doc_id, 0-indexed page)
 
@@ -147,21 +155,68 @@ def recall_by_content(ret: pd.DataFrame) -> dict[str, float]:
     }
 
 
-def retrieval_scores(queries: pd.DataFrame, retriever: Retriever) -> pd.DataFrame:
+def search_queries(
+    questions: list[str], client: anthropic.Anthropic
+) -> list[SearchQuery]:
+    """`search_query` for each question under the REWRITE / HYDE flags, EVAL_WORKERS
+    Claude calls at a time (no call when both flags are off)."""
+    with ThreadPoolExecutor(EVAL_WORKERS) as pool:
+        return list(pool.map(lambda q: search_query(q, client), questions))
+
+
+def retrieval_scores(
+    queries: pd.DataFrame, retriever: Retriever, client: anthropic.Anthropic
+) -> pd.DataFrame:
     """Per query: page-level recall@10, NDCG@10, whether the top chunks held
-    fewer than EVAL_K distinct pages, and the query's content types."""
+    fewer than EVAL_K distinct pages, the query's content types and format, and
+    the rewrite / HyDE cost."""
     rows = []
-    for q in queries.itertuples():
-        hits = retriever.search(q.query)
-        ranked = ranked_pages(hits)
+    sqs = search_queries(list(queries["query"]), client)
+    for q, sq in zip(queries.itertuples(), sqs):
+        ranked = ranked_pages(retriever.search(sq.text, passage=sq.passage))
         rows.append(
             {
+                "query_id": q.query_id,
                 "recall": recall_at_k(ranked, q.gold),
                 "ndcg": ndcg_at_k(ranked, q.gold),
                 "short": len(ranked) < EVAL_K,
                 "content_type": set(q.content_type),
+                "format": q.query_format,
+                "cost": sq.cost_usd,
             }
         )
+    return pd.DataFrame(rows)
+
+
+def conversation_scores(
+    retriever: Retriever, client: anthropic.Anthropic
+) -> pd.DataFrame:
+    """recall@10 / NDCG@10 of each follow-up in FOLLOWUPS_PATH three ways:
+    `raw` = the follow-up searched as is, `rewritten` = rewritten with the first
+    question as history, `original` = the dataset query it was written from (the
+    ceiling). Gold pages are the original query's."""
+    queries = load_queries().set_index("query_id")
+    convs = [json.loads(line) for line in FOLLOWUPS_PATH.open(encoding="utf-8")]
+
+    def rewrite_one(c: dict) -> SearchQuery:
+        return search_query(c["follow_up"], client, [c["first"]], False, False)
+
+    with ThreadPoolExecutor(EVAL_WORKERS) as pool:
+        sqs = list(pool.map(rewrite_one, convs))
+    rows = []
+    for c, sq in zip(convs, sqs):
+        gold = queries.at[c["source_query_id"], "gold"]
+        row = {"id": c["id"], "rewritten_query": sq.text, "cost": sq.cost_usd}
+        texts = {
+            "raw": c["follow_up"],
+            "rewritten": sq.text,
+            "original": queries.at[c["source_query_id"], "query"],
+        }
+        for way, text in texts.items():
+            ranked = ranked_pages(retriever.search(text))
+            row[f"recall {way}"] = recall_at_k(ranked, gold)
+            row[f"ndcg {way}"] = ndcg_at_k(ranked, gold)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -188,9 +243,10 @@ def run_sample(
 ) -> list[Result]:
     """Answer the 60 answerable then the 20 unanswerable sample queries.
 
-    Search runs in order (one local embed + one Pinecone call each); the Claude
-    calls run EVAL_WORKERS at a time. Raises QueryError like `answer`, naming
-    the query.
+    Each question goes through `search_query` (REWRITE / HYDE flags); its cost is
+    added to the answer's. Search runs in order (one local embed + one Pinecone
+    call each); the Claude calls run EVAL_WORKERS at a time. Raises QueryError
+    like `answer`, naming the query.
     """
     by_id = queries.set_index("query_id")
     items = [
@@ -202,15 +258,17 @@ def run_sample(
         if u["id"] in sample["unanswerable"]:
             items.append((u["id"], u["query"], None))
 
-    def answer_one(item: tuple, item_hits: list[Hit]) -> Answer:
+    def answer_one(item: tuple, item_hits: list[Hit], sq: SearchQuery) -> Answer:
         try:
-            return answer(item[1], item_hits, client)
+            a = answer(sq.question, item_hits, client)
         except QueryError as e:
             raise QueryError(f"query {item[0]}: {e}") from e
+        return replace(a, cost_usd=a.cost_usd + sq.cost_usd)
 
-    hits = [retriever.search(q) for _, q, _ in items]
+    sqs = search_queries([q for _, q, _ in items], client)
+    hits = [retriever.search(sq.text, passage=sq.passage) for sq in sqs]
     with ThreadPoolExecutor(EVAL_WORKERS) as pool:
-        answers = list(pool.map(answer_one, items, hits))
+        answers = list(pool.map(answer_one, items, hits, sqs))
     return [
         Result(qid, q, ref, h[:ANSWER_K], a)
         for (qid, q, ref), h, a in zip(items, hits, answers)
@@ -425,7 +483,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
     retriever = Retriever()
     client = anthropic.Anthropic()
 
-    ret = retrieval_scores(queries, retriever)
+    ret = retrieval_scores(queries, retriever, client)
     results = run_sample(queries, sample, retriever, client)
     ragas_df, ragas_cost = ragas_scores(results)
     answerable = [r for r in results if r.reference is not None]
@@ -463,7 +521,8 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         **abstain_scores(results),
     }
     cost = {
-        "answers": sum(r.answer.cost_usd for r in results),
+        "retrieval_eval_search": float(ret.cost.sum()),  # rewrite / HyDE, 364 queries
+        "answers": sum(r.answer.cost_usd for r in results),  # incl. their rewrite/HyDE
         "ragas": ragas_cost,
         "judge": sum(c for _, c in judged),
     }
@@ -475,6 +534,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "label": label,
         "index": INDEX_NAME,
+        "flags": {"rewrite": REWRITE, "hyde": HYDE},
         "metrics": metrics,
         "n_answered": sum(is_answered),
         "n_refused": sum(r.answer.refused for r in results),
@@ -499,6 +559,7 @@ def print_run(record: dict) -> None:
     """Metrics, NaN counts, cost and the gate verdict of one run."""
     base = last_passed() if not record["passed"] else None
     print(f"{record['ts']}  {record['label']}  ({record['index']})")
+    print(f"  flags: {record['flags']}")
     for m, v in record["metrics"].items():
         mark = "  FAILED" if m in record["failed"] else ""
         print(f"  {m:22s} {v:.4f}{mark}")
@@ -512,8 +573,17 @@ def print_run(record: dict) -> None:
         print("  accepted run kept:", base["ts"])
 
 
+def print_retrieval(name: str, ret: pd.DataFrame) -> None:
+    """One line: recall@10 and NDCG@10 means over `ret`."""
+    print(
+        f"{name:28s} n={len(ret):3d}  recall@{EVAL_K} {ret.recall.mean():.4f}"
+        f"  NDCG@{EVAL_K} {ret.ndcg.mean():.4f}"
+    )
+
+
 def main() -> None:
-    """No argument: free retrieval eval. `full "label"`: the full eval."""
+    """No argument: free retrieval eval. `followups`: the two-turn tests.
+    `full "label"`: the full eval."""
     logging.basicConfig(level=logging.WARNING)
     if sys.argv[1:2] == ["full"]:
         record, _ = run_full(sys.argv[2])
@@ -521,15 +591,33 @@ def main() -> None:
         return
 
     load_dotenv(PROJECT_DIR / ".env")
+    client = anthropic.Anthropic()
+    if sys.argv[1:2] == ["followups"]:
+        conv = conversation_scores(Retriever(), client)
+        pd.set_option("display.width", 200, "display.max_colwidth", 90)
+        print(conv[["id", "recall raw", "recall rewritten", "recall original"]])
+        for _, r in conv.iterrows():
+            print(f"{r['id']}: {r['rewritten_query']}")
+        for way in ("raw", "rewritten", "original"):
+            print(
+                f"{way:9s} recall@{EVAL_K} {conv[f'recall {way}'].mean():.4f}"
+                f"  NDCG@{EVAL_K} {conv[f'ndcg {way}'].mean():.4f}"
+            )
+        print(f"rewrite cost ${conv.cost.sum():.4f}")
+        return
+
     queries = load_queries()
     sample = make_sample(queries)
     in_sample = queries["query_id"].isin(sample["answerable"])
-    res = retrieval_scores(queries, Retriever())
+    res = retrieval_scores(queries, Retriever(), client)
+    keyword = res.format == "keyword"
     n_visual = int(queries.loc[in_sample, "visual"].sum())
     n_many_gold = int((queries.gold.map(len) > EVAL_K).sum())
-    print(f"index {INDEX_NAME}, {len(queries)} queries, page-level @{EVAL_K}")
-    print(f"recall@{EVAL_K}: {res.recall.mean():.4f}")
-    print(f"NDCG@{EVAL_K}:   {res.ndcg.mean():.4f}")
+    print(f"index {INDEX_NAME}, page-level @{EVAL_K}, REWRITE={REWRITE} HYDE={HYDE}")
+    print_retrieval("all queries", res)
+    print_retrieval("non-sample (decides flags)", res[~in_sample])
+    print_retrieval("keyword queries", res[keyword])
+    print_retrieval("keyword, non-sample", res[keyword & ~in_sample])
     for name, value in recall_by_content(res).items():
         print(f"{name}: {value:.4f}")
     print(f"queries with < {EVAL_K} distinct pages in top chunks: {res.short.sum()}")
@@ -538,6 +626,7 @@ def main() -> None:
         f"sample: {len(sample['answerable'])} answerable ({n_visual} visual)"
         f" + {len(sample['unanswerable'])} unanswerable"
     )
+    print(f"rewrite / HyDE cost ${res.cost.sum():.4f}")
 
 
 if __name__ == "__main__":
