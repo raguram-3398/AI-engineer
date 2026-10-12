@@ -1,19 +1,24 @@
-"""Retrieve: question -> (rewrite / HyDE) -> BGE vector -> Pinecone -> list[Hit].
+"""Retrieve: question -> (rewrite / HyDE) -> BGE vector -> Pinecone -> list[Hit],
+or with RETRIEVAL=hybrid (Day 32): Pinecone and BM25 lists fused by RRF.
 
 Hit text comes from `chunks.jsonl`, the same file the live index was built from
-(README, re-index step 4), not from Pinecone metadata.
+(README, re-index step 4), not from Pinecone metadata. BM25 is built from the
+same file at startup.
 """
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
 import anthropic
 from pinecone import Pinecone
 from pinecone.errors import PineconeConnectionError, PineconeTimeoutError, ServiceError
+from rank_bm25 import BM25Okapi
 
 from multimodal_rag.config import (
+    BM25_EPSILON,
     CHUNKS_PATH,
     CLAUDE_MODEL,
     CLAUDE_TIMEOUT_S,
@@ -26,8 +31,10 @@ from multimodal_rag.config import (
     PRICE_IN_PER_MTOK,
     PRICE_OUT_PER_MTOK,
     QUERY_PREFIX,
+    RETRIEVAL,
     REWRITE,
     REWRITE_MAX_TOKENS,
+    RRF_K,
     TOP_K,
 )
 from multimodal_rag.contracts import Chunk, Hit, SearchQuery
@@ -168,21 +175,53 @@ def load_chunks(path: Path = CHUNKS_PATH) -> dict[str, Chunk]:
         return {c.chunk_id: c for c in chunks}
 
 
-class Retriever:
-    """Holds the BGE model, the Pinecone index handle and the chunk map.
+def tokenize(text: str) -> list[str]:
+    """BM25 tokens: lowercase alphanumeric runs. Used for chunks and queries alike.
+    No stemming, no stopwords ("COVID-19" -> ["covid", "19"])."""
+    return re.findall(r"[a-z0-9]+", text.lower())
 
-    Build once per process; `search` is then one local embed + one Pinecone call.
+
+def rrf(rankings: Sequence[Sequence[str]], k: int = RRF_K) -> list[tuple[str, float]]:
+    """Reciprocal Rank Fusion: each id scores the sum of 1 / (k + rank) over the
+    lists it appears in (rank 1-based). Best first; ties broken by id."""
+    scores: dict[str, float] = {}
+    for ranking in rankings:
+        for rank, chunk_id in enumerate(ranking, start=1):
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
+    return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+class Retriever:
+    """Holds the BGE model, the Pinecone index handle, the chunk map and, for
+    hybrid, the BM25 index over the same chunks.
+
+    Build once per process; `search` is then one local embed + one Pinecone call
+    (+ one local BM25 scoring pass for hybrid).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, strategy: str = RETRIEVAL) -> None:
         from sentence_transformers import SentenceTransformer
 
+        if strategy not in ("vector", "hybrid"):
+            raise ValueError(f"RETRIEVAL must be vector or hybrid, got {strategy!r}")
+        self.strategy = strategy
         self.model = SentenceTransformer(EMBED_MODEL, device="cpu")
         self.chunks = load_chunks()
+        if strategy == "hybrid":
+            self.build_bm25()
         pc = Pinecone(
             api_key=os.environ["PINECONE_API_KEY"], timeout=PINECONE_TIMEOUT_S
         )
         self.index = pc.Index(INDEX_NAME)
+
+    def build_bm25(self) -> None:
+        """BM25Okapi over every chunk (text and vision): k1=1.5, b=0.75 (library
+        defaults), terms in more than half the chunks score 0 (BM25_EPSILON)."""
+        self.bm25_ids = list(self.chunks)
+        self.bm25 = BM25Okapi(
+            [tokenize(self.chunks[i].text) for i in self.bm25_ids],
+            epsilon=BM25_EPSILON,
+        )
 
     def embed(self, text: str, passage: bool = False) -> list[float]:
         """Normalized BGE vector (local, no network). Queries get QUERY_PREFIX;
@@ -191,6 +230,35 @@ class Retriever:
         return self.model.encode(prefix + text, normalize_embeddings=True).tolist()
 
     def search(self, text: str, k: int = TOP_K, passage: bool = False) -> list[Hit]:
+        """Top-k chunks for `text`, best first, by the Retriever's strategy.
+
+        vector: `vector_search` (score = cosine). hybrid: the top-k of
+        `vector_search` and of `bm25_search` fused by `rrf` (score = RRF score,
+        ~0.016-0.033, not comparable with cosine). Raises as `vector_search`.
+        """
+        vector = self.vector_search(text, k, passage)
+        if self.strategy == "vector":
+            return vector
+        bm25 = self.bm25_search(text, k)
+        fused = rrf(
+            [[h.chunk.chunk_id for h in vector], [h.chunk.chunk_id for h in bm25]]
+        )
+        return [Hit(self.chunks[cid], score) for cid, score in fused[:k]]
+
+    def bm25_search(self, text: str, k: int = TOP_K) -> list[Hit]:
+        """Top-k chunks by BM25 score (> 0 only), best first. A query sharing no
+        token with any chunk returns [] rather than k arbitrary zero-score chunks.
+        Local, no network."""
+        scores = self.bm25.get_scores(tokenize(text))
+        top = sorted(
+            (i for i in range(len(scores)) if scores[i] > 0),
+            key=lambda i: (-scores[i], self.bm25_ids[i]),
+        )[:k]
+        return [Hit(self.chunks[self.bm25_ids[i]], float(scores[i])) for i in top]
+
+    def vector_search(
+        self, text: str, k: int = TOP_K, passage: bool = False
+    ) -> list[Hit]:
         """Top-k chunks by cosine similarity to `text`, best first.
 
         Raises QueryError if Pinecone times out, is unreachable or returns 5xx

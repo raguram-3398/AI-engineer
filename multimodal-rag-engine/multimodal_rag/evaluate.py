@@ -4,7 +4,8 @@ Free retrieval eval (no Claude): page-level recall@10 and NDCG@10 on all 364
 English queries, split by visual content type, and the fixed eval sample.
     python -m multimodal_rag.evaluate
 
-Both follow the REWRITE / HYDE flags (Day 31), e.g. `HYDE=1 python -m ...`.
+Both follow the REWRITE / HYDE flags (Day 31) and RETRIEVAL (Day 32), e.g.
+`RETRIEVAL=vector python -m ...`.
 
 Ten two-turn conversations (Claude rewrites the follow-ups; retrieval metrics only):
     python -m multimodal_rag.evaluate followups
@@ -50,6 +51,7 @@ from multimodal_rag.config import (
     QRELS_PATH,
     QUERIES_PATH,
     RAGAS_MAX_TOKENS,
+    RETRIEVAL,
     REWRITE,
     SAMPLE_PATH,
     SAMPLE_SEED,
@@ -534,7 +536,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "label": label,
         "index": INDEX_NAME,
-        "flags": {"rewrite": REWRITE, "hyde": HYDE},
+        "flags": {"rewrite": REWRITE, "hyde": HYDE, "retrieval": RETRIEVAL},
         "metrics": metrics,
         "n_answered": sum(is_answered),
         "n_refused": sum(r.answer.refused for r in results),
@@ -613,7 +615,10 @@ def main() -> None:
     keyword = res.format == "keyword"
     n_visual = int(queries.loc[in_sample, "visual"].sum())
     n_many_gold = int((queries.gold.map(len) > EVAL_K).sum())
-    print(f"index {INDEX_NAME}, page-level @{EVAL_K}, REWRITE={REWRITE} HYDE={HYDE}")
+    print(
+        f"index {INDEX_NAME}, page-level @{EVAL_K}, REWRITE={REWRITE} HYDE={HYDE}"
+        f" RETRIEVAL={RETRIEVAL}"
+    )
     print_retrieval("all queries", res)
     print_retrieval("non-sample (decides flags)", res[~in_sample])
     print_retrieval("keyword queries", res[keyword])
