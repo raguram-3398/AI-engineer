@@ -63,6 +63,15 @@ REWRITE_MAX_TOKENS: int = 1024  # forced tool call, no thinking; one line
 HYDE_MAX_TOKENS: int = 2048  # thinking counts; the passage is ~100 words
 FOLLOWUPS_PATH: Path = EVAL_DIR / "followups.jsonl"  # 10 two-turn tests
 
+# Hybrid retrieval (Day 32): BM25 and vector search fused by RRF. Default since
+# Ram's Mac run passed the gate (2026-10-12); RETRIEVAL=vector for vector only.
+RETRIEVAL: str = os.environ.get("RETRIEVAL", "hybrid")  # "vector" or "hybrid"
+RRF_K: int = 60  # RRF constant from Cormack et al. (2009); not tuned
+# rank_bm25's BM25Okapi floors a negative IDF (term in > half the chunks) at
+# epsilon x mean IDF. Its default 0.25 gave "the", "of", "and", "in", "for", "a",
+# "to" IDF 1.79, above "fda" (1.21) and "drug" (0.97). 0 scores them 0 (Day 32).
+BM25_EPSILON: float = 0.0
+
 # Answer
 CLAUDE_MODEL: str = "claude-haiku-5-5"  # never pass `temperature` (400 on 5.5)
 CLAUDE_TIMEOUT_S: float = 30.0  # per attempt; the SDK retries twice on its own

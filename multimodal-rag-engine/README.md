@@ -75,7 +75,7 @@ Frozen dataclasses passed between stages:
 | `Page` | `doc_id`, `page` (0-indexed), `text`, `ocr: bool` | ingest → chunking |
 | `Chunk` | `chunk_id` (`doc_id-page-n`), `doc_id`, `page`, `text`, `n_tokens`, `kind` (`text` or `vision`) | chunking → index, BM25, answer |
 | `SearchQuery` | `question` (what Claude answers), `text` (what BGE embeds), `passage: bool` (HyDE), `cost_usd` | retrieve → retrieve, answer, eval |
-| `Hit` | `chunk: Chunk`, `score` | retrieve → answer, eval |
+| `Hit` | `chunk: Chunk`, `score` (cosine; RRF score under `RETRIEVAL=hybrid`) | retrieve → answer, eval |
 | `Citation` | `chunk_id`, `doc_id`, `page`, `cited_text`, `score`, `generated: bool` | answer → UI, eval |
 | `Answer` | `text`, `citations`, `abstained`, `cost_usd`, `latency_s`, `confidence` (added Day 34) | answer → UI, eval |
 
@@ -240,6 +240,69 @@ Findings:
 - HyDE raised recall on 16 keyword queries and lowered it on 4 (per-query diagnostic, $0.018). It helps when the slide's wording differs from the query's: query 95's gold page went from rank > 10 to found. It hurts when the generated passage is generic or has specifics of its own; query 163 lost its gold page.
 - HyDE makes retrieval nondeterministic: keyword recall was 0.5548 and 0.5555 in two runs. The flags-off retrieval metrics are deterministic.
 - HyDE on the 20 unanswerable queries: 20/20 still abstain (off: 20/20), 0 refusals, $0.019. Mean top-1 retrieval score rises 0.769 → 0.824: a passage matches passages more closely than a question does, so similarity scores are not comparable with and without HyDE.
+
+## Hybrid retrieval (Day 32)
+
+Run: `python -m multimodal_rag.evaluate` (free, ~50 s). Hybrid is the default since Ram's Mac run passed the gate (2026-10-12); `RETRIEVAL=vector` is the Day 30 path, unchanged.
+
+`Retriever` builds a BM25 index (`rank-bm25` `BM25Okapi`, k1 = 1.5, b = 0.75) over all 4,725 chunks of `data/chunks.jsonl` (text and vision) at startup, in memory, with no extra service. Chunks and queries share one tokenizer: lowercase alphanumeric runs, no stemming, no stopwords. A search takes the top 20 chunks from Pinecone and the top 20 by BM25 (score > 0 only), and fuses them by Reciprocal Rank Fusion: score = Σ 1 / (60 + rank). The fused top 20 go on as before (eval dedupes them to pages, Claude gets the first 10 chunks). Under hybrid, `Hit.score` and `Citation.score` are RRF scores (~0.016–0.033), not cosine.
+
+`BM25_EPSILON = 0`: `BM25Okapi` gives a term found in more than half the chunks a floor IDF of epsilon × mean IDF. The default 0.25 gave the 7 most common words ("the", "of", "and", "in", "for", "a", "to") IDF 1.79, above "fda" (1.21) and "drug" (0.97), so a chunk scored for matching "the" more than for matching "drug". With 0 they score nothing. Chosen on the 304 non-sample queries (table).
+
+### Day 32 results (sandbox, index v2; free retrieval metrics, page-level @10)
+
+| Queries | vector (off) | BM25 alone, epsilon 0.25 | BM25 alone, epsilon 0 | hybrid, epsilon 0.25 | **hybrid, epsilon 0** |
+|---|---|---|---|---|---|
+| all 364: recall / NDCG | 0.5787 / 0.5180 | 0.5457 / 0.5094 | 0.5833 / 0.5432 | 0.6076 / 0.5576 | **0.6195 / 0.5642** |
+| **304 non-sample (decides)**: recall / NDCG | 0.5952 / 0.5298 | 0.5551 / 0.5152 | 0.5958 / 0.5484 | 0.6195 / 0.5621 | **0.6352 / 0.5713** |
+| 57 keyword: recall / NDCG | 0.5235 / 0.4828 | 0.5320 / 0.5001 | 0.5502 / 0.5055 | 0.5870 / 0.5412 | **0.5744 / 0.5361** |
+| recall Chart / Infographic / Image | 0.4374 / 0.4500 / 0.4329 | 0.4372 / 0.4131 / 0.2975 | 0.4747 / 0.4340 / 0.3839 | 0.4855 / 0.4589 / 0.3957 | **0.5054 / 0.4753 / 0.4112** |
+
+BM25 alone is a separate diagnostic, not a `RETRIEVAL` option. Ram's Mac, hybrid: identical (0.6195 / 0.5642 on all 364; 0.6352 / 0.5713 on the 304).
+
+Per query on the 304 (hybrid vs vector recall): 63 up, 34 down, 207 equal. BM25 alone beats vector on 58, vector beats BM25 on 72: the two miss different pages, which is why fusing them helps.
+
+Full eval (gated on Ram's Mac vs the last passed run, v2 no threshold; the sandbox run checked the code first and is not a baseline):
+
+| Measure | v2 no threshold (Mac, Day 30) | **hybrid (Mac, accepted)** | hybrid (sandbox) |
+|---|---|---|---|
+| recall@10 / NDCG@10 | 0.5787 / 0.5180 | **0.6195 / 0.5642** | 0.6195 / 0.5642 |
+| recall@10 Chart / Infographic / Image | 0.4374 / 0.4500 / 0.4329 | **0.5054 / 0.4753 / 0.4112** | same |
+| faithfulness | 0.9193 | **0.9259** | 0.9106 |
+| answer relevancy | 0.8330 | **0.8443** | 0.8186 |
+| context precision | 0.4584 | **0.5334** | 0.5710 |
+| context recall | 0.5486 | **0.5848** | 0.6160 |
+| judge faithfulness / relevance / completeness | 3.62 / 3.37 / 2.87 | **3.63 / 3.45 / 2.93** | 3.65 / 3.43 / 2.97 |
+| unanswerable abstained | 20/20 | **20/20** | 20/20 |
+| answerable answered | 49/60 | **51/60** | 52/60 |
+| refused | 0 | **0** | 0 |
+| gate | PASS | **PASS** | PASS |
+| run cost | $0.525 | **$0.543** | $0.548 |
+
+### Where keyword wins, where vector wins (304 non-sample queries)
+
+Rank = position of each gold page among the distinct pages of that list's top 100 chunks (hybrid: its fused top 20). Only each list's top 20 chunks enter the fusion.
+
+| Query | vector | BM25 | hybrid | Why |
+|---|---|---|---|---|
+| 255 "ANDAs received by FDA in FY12" | not in top 100 chunks | 1 | 7 | The gold page is a bar chart whose only matching token is the axis label "FY12" (IDF 7.5, one chunk). BGE embeds "FY12" as a generic fiscal-year token; BM25 rewards the exact rare string. |
+| 254 "…organizations collaborated with CDER on data harmonization for RWE" | not in top 100 | 1 | 5 | "RWE" (6.4) and "harmonization" (4.9) appear verbatim on the slide. Vector top 1 is a slide listing CDER affiliations: it matched "organizations / CDER" by meaning, the wrong sense. |
+| 90 "…months … between the initial FDA workshop on opioid packaging and the cutoff … to the public docket" | 48, 49 | 1, 2 | 6, 8 | A long question whose answer hinges on rare literal words on the slide ("docket" 5.8, "workshop" 5.0, "packaging" 4.2). The vector is dominated by the general opioid-policy meaning, which many slides share. |
+| 95 "injectable medications compared to solid oral formulations … initial approval success rates FDA GDUFA" | 13 | 5 | **2** | The Day 28 diagnosed false abstain. The slide says "FIRST CYCLE ANDA APPROVALS … Injectables > solid oral > others"; "solid oral" (5.7, 4.3) is the literal link the vector missed. Fusion ranks it higher than either list. |
+| 326 "…highest number of ANDAs received … before and after … GDUFA" | 38 | 8 | 15 (lost) | Keyword wins ("fiscal", "year", "gdufa" on the chart), but RRF loses it: the page is outside vector's top 20 chunks, so it gets BM25's 1/(60+rank) only, and chunks found by both lists fuse above it. Hybrid recall 0 on a query BM25 alone gets. |
+| 204 "Why does the consent for biosimilar products not depend on basic chemical equivalents?" | 8, 10, 25 | 87 or none | 15, 18, none (lost) | Paraphrase: the slides say "highly similar", "reference product", "notwithstanding minor differences"; only "biosimilar" is shared. BM25's top hits are book prose matching "basic" and "depend". |
+| 319 "Which framework did the FDA ask NASEM to refine … importance of generics …" | 6, 8 | 31, none | 11, 14 (lost) | Only "nasem" and "framework" are on the gold pages. The question's rare words ("refine" 7.0, "emphasize" 6.2, "recognizing" 6.1) are question phrasing that the slides don't use, so BM25 ranks a book chunk on generics first. |
+| 102 "How do submission patterns of ANDAs in 2017 compare to regulatory actions in 2018 …" | 8 | 52 | 11 (lost) | The gold chart's text is axis digits and garbled vertical letters ("s t p e c e … R A D N A"): "ANDA Receipts" lost as tokens. BGE still places the page near the question; the rare words "compare" (6.3), "reveal" (7.0) match other chunks. |
+| 98 "drug name similarity assessment tools … risk management framework …" | 1 | 27 | 4 | The slide is about POCA ("Phonetic Orthographic Computerized Analysis … similar drug names"). Meaning matches; most query words ("tools", "framework", "criteria", "scopes") are not on it. |
+| 307 "Calculate the percent increase in ANDAs reviewed between the expected and actual reviews" | 5 | 21 | 10 | The slide states it as "GDUFA goal: … 60% … FDA acted on 97%": "goal" for "expected", "acted on" for "reviewed". Only "andas" overlaps. |
+
+Findings:
+- Hybrid with epsilon 0 beats vector-only on the 304 non-sample queries (recall +0.040, NDCG +0.042) and on every content type except Image (0.4329 → 0.4112; 11 Image queries up, 12 down). Not diagnosed; BM25 alone is weakest on Image (0.3839).
+- Epsilon 0 lowered keyword-format recall (hybrid 0.5870 → 0.5744) while raising the 304. The 304 decides; keyword queries are 47 of them.
+- RRF's failure mode is visible: a page that only one list ranks well (326, 204, 319, 102) can drop out of the top 10 when the other list misses it. 4 of the 10 examples lost a page this way.
+- Question words ("what", "did", "why", "does") keep a positive IDF (2.5–4.1) because they occur in under half the chunks. They pull BM25 toward book prose on question-phrased queries (204, 319). Stopwords were not tried.
+- Mac full eval: every gated metric held or rose. The retrieval gain reached the answer side: context precision +0.075, context recall +0.036, answered 49 → 51 of 60, with faithfulness and answer relevancy slightly up (+0.007, +0.011) and 20/20 unanswerable still abstained. Accepted; hybrid is the default. The sandbox run of the same code had faithfulness and answer relevancy slightly down (0.911, 0.819): the same run-to-run spread seen since Day 29.
+- BM25 cost (sandbox CPU): build 0.3 s for 4,725 chunks at startup; 15 ms per query (BM25Okapi scores every chunk).
 
 ## Indexing
 

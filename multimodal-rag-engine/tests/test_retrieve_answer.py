@@ -1,5 +1,6 @@
 """Query-path edge cases: abstain without Claude, citation verification, the
-0-indexed page, early stop, Pinecone down, query transforms. No network calls."""
+0-indexed page, early stop, Pinecone down, query transforms, BM25 + RRF.
+No network calls."""
 
 from types import SimpleNamespace as NS
 
@@ -9,7 +10,7 @@ from pinecone.errors import PineconeTimeoutError
 from multimodal_rag.answer import answer, build_documents, verify_citations
 from multimodal_rag.config import ABSTAIN_TEXT, QUERY_PREFIX, REFUSAL_TEXT
 from multimodal_rag.contracts import Chunk, Hit
-from multimodal_rag.retrieve import QueryError, Retriever, search_query
+from multimodal_rag.retrieve import QueryError, Retriever, rrf, search_query, tokenize
 
 TEXT = "FDA approved 50 novel drugs in 2021. Most were small molecules."
 
@@ -119,11 +120,14 @@ def test_refusal_is_its_own_outcome() -> None:
     assert result.cost_usd > 0
 
 
-def _retriever(index) -> Retriever:
+def _retriever(index, strategy: str = "vector", chunks: list[Chunk] = ()) -> Retriever:
     r = object.__new__(Retriever)  # skip loading BGE and connecting to Pinecone
+    r.strategy = strategy
     r.model = NS(encode=lambda text, normalize_embeddings: NS(tolist=lambda: [0.0]))
-    r.chunks = {"deck-4-0": _hit().chunk}
+    r.chunks = {c.chunk_id: c for c in [_hit().chunk, *chunks]}
     r.index = index
+    if strategy == "hybrid":
+        r.build_bm25()
     return r
 
 
@@ -193,3 +197,61 @@ def test_hyde_passage_embedded_without_query_prefix() -> None:
     r.search(sq.text, passage=sq.passage)
     r.search("q")
     assert seen == ["FDA approved 50 drugs.", QUERY_PREFIX + "q"]
+
+
+def test_tokenize_lowercases_and_splits_on_punctuation() -> None:
+    """Chunks and queries go through the same function, so "COVID-19" in a query
+    matches "covid-19" in a chunk."""
+    assert tokenize("COVID-19 and Section 301(ll)") == [
+        "covid",
+        "19",
+        "and",
+        "section",
+        "301",
+        "ll",
+    ]
+
+
+def test_rrf_sums_ranks_across_lists_best_first() -> None:
+    """b is 2nd in both lists and beats a, which is 1st in one list only;
+    c and d tie (rank 3 in one list each) and are ordered by id."""
+    fused = rrf([["a", "b", "d"], ["x", "b", "c"]], k=60)
+    assert [cid for cid, _ in fused] == ["b", "a", "x", "c", "d"]
+    assert fused[0][1] == pytest.approx(2 / 62)
+
+
+def _bm25_retriever() -> Retriever:
+    """5 chunks: "dscsa" in 2 (positive IDF), "the" in 3 (negative IDF)."""
+    chunks = [
+        Chunk("book-1-0", "book", 1, "The DSCSA product tracing rules.", 6, "text"),
+        Chunk("deck-5-0", "deck", 5, "Bar chart of the DSCSA dates.", 6, "vision"),
+        Chunk("deck-6-0", "deck", 6, "Opioid packaging and the docket.", 6, "text"),
+        Chunk("deck-7-0", "deck", 7, "Biosimilar interchangeability.", 4, "text"),
+    ]
+    index = NS(query=lambda **kwargs: NS(matches=[NS(id="deck-4-0", score=0.9)]))
+    return _retriever(index, "hybrid", chunks)
+
+
+def test_bm25_query_matching_no_chunk_returns_nothing() -> None:
+    """All-zero BM25 scores must not hand arbitrary chunks RRF credit."""
+    r = _bm25_retriever()
+    assert r.bm25_search("zzzz qqqq") == []
+    assert [h.chunk.chunk_id for h in r.search("zzzz qqqq")] == ["deck-4-0"]
+
+
+def test_words_in_most_chunks_add_no_bm25_score() -> None:
+    """With rank_bm25's default epsilon, "the" (in 3 of 5 chunks) would get a
+    positive IDF floor; BM25_EPSILON = 0 makes it worth nothing."""
+    r = _bm25_retriever()
+    assert r.bm25_search("the") == []
+    assert r.bm25.idf["the"] == 0.0
+
+
+def test_hybrid_fuses_vector_and_bm25_with_rrf_scores() -> None:
+    """Vector finds deck-4-0 only; BM25 finds both DSCSA chunks (vision chunks
+    are in the BM25 index too). Every hit carries its RRF score."""
+    hits = _bm25_retriever().search("DSCSA")
+    assert {h.chunk.chunk_id for h in hits} == {"deck-4-0", "book-1-0", "deck-5-0"}
+    scores = {h.chunk.chunk_id: h.score for h in hits}
+    assert scores["deck-4-0"] == pytest.approx(1 / 61)  # rank 1 in the vector list
+    assert sorted(scores.values(), reverse=True) == [h.score for h in hits]

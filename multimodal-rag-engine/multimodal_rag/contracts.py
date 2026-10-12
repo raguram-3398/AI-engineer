@@ -35,7 +35,8 @@ class Chunk:
 
 @dataclass(frozen=True)
 class Hit:
-    """One retrieved chunk and its cosine similarity to the query."""
+    """One retrieved chunk and its retrieval score: cosine similarity (vector),
+    BM25 score (`bm25_search`) or RRF score (hybrid, Day 32)."""
 
     chunk: Chunk
     score: float
