@@ -1,6 +1,6 @@
 """Query-path edge cases: abstain without Claude, citation verification, the
-0-indexed page, early stop, Pinecone down, query transforms, BM25 + RRF.
-No network calls."""
+0-indexed page, early stop, Pinecone down, query transforms, BM25 + RRF,
+reranking, citation metadata, a query with no keyword match. No network calls."""
 
 from types import SimpleNamespace as NS
 
@@ -120,9 +120,12 @@ def test_refusal_is_its_own_outcome() -> None:
     assert result.cost_usd > 0
 
 
-def _retriever(index, strategy: str = "vector", chunks: list[Chunk] = ()) -> Retriever:
+def _retriever(
+    index, strategy: str = "vector", chunks: list[Chunk] = (), reranker=None
+) -> Retriever:
     r = object.__new__(Retriever)  # skip loading BGE and connecting to Pinecone
     r.strategy = strategy
+    r.reranker = reranker
     r.model = NS(encode=lambda text, normalize_embeddings: NS(tolist=lambda: [0.0]))
     r.chunks = {c.chunk_id: c for c in [_hit().chunk, *chunks]}
     r.index = index
@@ -255,3 +258,84 @@ def test_hybrid_fuses_vector_and_bm25_with_rrf_scores() -> None:
     scores = {h.chunk.chunk_id: h.score for h in hits}
     assert scores["deck-4-0"] == pytest.approx(1 / 61)  # rank 1 in the vector list
     assert sorted(scores.values(), reverse=True) == [h.score for h in hits]
+
+
+def test_every_citation_carries_its_source_metadata() -> None:
+    """Whatever the retrieval scores (here negative cross-encoder logits), each
+    citation names the chunk, PDF, 0-indexed page, score and generated flag of
+    the document it quotes; page 0 included."""
+    hits = [
+        _hit(score=-1.5, page=0),
+        _hit(score=-3.25, page=3, text="Chart: 50 approvals in 2021.", kind="vision"),
+    ]
+    content = [
+        NS(type="text", text="50 drugs", citations=[_cite(0, 36, TEXT[:36])]),
+        NS(type="text", text=" (chart).", citations=[_cite(7, 19, "50 approvals", 1)]),
+    ]
+    result = answer("How many?", hits, FakeClient(content))
+    assert len(result.citations) == 2
+    for c, h in zip(result.citations, hits):
+        assert (c.chunk_id, c.doc_id, c.page) == (
+            h.chunk.chunk_id,
+            h.chunk.doc_id,
+            h.chunk.page,
+        )
+        assert c.score == h.score and c.generated == (h.chunk.kind == "vision")
+        assert c.cited_text and c.cited_text in h.chunk.text
+
+
+class FakeCrossEncoder:
+    """Scores a pair by how many of the question's words the chunk contains;
+    records the pairs it was given."""
+
+    def __init__(self) -> None:
+        self.pairs: list[tuple[str, str]] = []
+
+    def predict(self, pairs: list[tuple[str, str]]) -> list[float]:
+        self.pairs += pairs
+        return [float(sum(w in t.lower() for w in q.lower().split())) for q, t in pairs]
+
+
+def _reranking_retriever(ce: FakeCrossEncoder) -> Retriever:
+    """Vector order: deck-4-0, deck-6-0, deck-7-0 (cosine 0.9, 0.8, 0.7)."""
+    chunks = [
+        Chunk("deck-6-0", "deck", 6, "Opioid packaging and the docket.", 6, "text"),
+        Chunk("deck-7-0", "deck", 7, "Opioid docket packaging workshop.", 4, "text"),
+    ]
+    ids = [("deck-4-0", 0.9), ("deck-6-0", 0.8), ("deck-7-0", 0.7)]
+    matches = [NS(id=i, score=s) for i, s in ids]
+    index = NS(query=lambda **kwargs: NS(matches=matches))
+    return _retriever(index, "vector", chunks, ce)
+
+
+def test_rerank_reorders_by_cross_encoder_score_and_keeps_every_hit() -> None:
+    hits = _reranking_retriever(FakeCrossEncoder()).search("opioid docket workshop")
+    assert [h.chunk.chunk_id for h in hits] == ["deck-7-0", "deck-6-0", "deck-4-0"]
+    assert [h.score for h in hits] == [3.0, 2.0, 0.0]
+
+
+def test_rerank_scores_the_question_not_the_hyde_passage() -> None:
+    """Under HYDE the searched text is an invented passage; the cross-encoder
+    must judge chunks against the question Claude answers."""
+    ce = FakeCrossEncoder()
+    _reranking_retriever(ce).search(
+        "Invented FDA passage.", passage=True, question="opioid docket"
+    )
+    assert {q for q, _ in ce.pairs} == {"opioid docket"}
+
+
+def test_rerank_of_no_hits_does_not_call_the_model() -> None:
+    index = NS(query=lambda **kwargs: NS(matches=[]))
+    assert _retriever(index, reranker=NoCallClient()).search("q") == []
+
+
+def test_query_with_no_keyword_match_still_returns_ranked_hits() -> None:
+    """Known bad query: punctuation only, so no BM25 token. Hybrid falls back to
+    the vector list, the reranker still scores it, nothing raises."""
+    ce = FakeCrossEncoder()
+    base = _bm25_retriever()
+    r = _retriever(base.index, "hybrid", list(base.chunks.values()), ce)
+    hits = r.search("???")
+    assert r.bm25_search("???") == []
+    assert [h.chunk.chunk_id for h in hits] == ["deck-4-0"]
+    assert ce.pairs == [("???", TEXT)]

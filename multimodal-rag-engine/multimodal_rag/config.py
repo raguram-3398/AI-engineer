@@ -52,7 +52,7 @@ VISUAL_CONTENT: frozenset[str] = frozenset({"Chart", "Infographic", "Table", "Im
 # Retrieval
 # BGE v1.5 instruction for short query -> passage retrieval (passages take none)
 QUERY_PREFIX: str = "Represent this sentence for searching relevant passages: "
-TOP_K: int = 20  # chunks fetched from Pinecone (also the Day 33 rerank budget)
+TOP_K: int = 20  # chunks fetched from Pinecone (also the rerank budget)
 EVAL_K: int = 10  # distinct pages scored by recall@10 / NDCG@10
 
 # Query transforms (Day 31). REWRITE=1 / HYDE=1 in the environment turn them on.
@@ -71,6 +71,11 @@ RRF_K: int = 60  # RRF constant from Cormack et al. (2009); not tuned
 # epsilon x mean IDF. Its default 0.25 gave "the", "of", "and", "in", "for", "a",
 # "to" IDF 1.79, above "fda" (1.21) and "drug" (0.97). 0 scores them 0 (Day 32).
 BM25_EPSILON: float = 0.0
+
+# Reranker (Day 33). RERANK=1 in the environment turns it on: a cross-encoder
+# re-scores the TOP_K retrieved chunks against the question, best first.
+RERANK: bool = os.environ.get("RERANK") == "1"
+RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L6-v2"  # 512-token pair limit
 
 # Answer
 CLAUDE_MODEL: str = "claude-haiku-5-5"  # never pass `temperature` (400 on 5.5)

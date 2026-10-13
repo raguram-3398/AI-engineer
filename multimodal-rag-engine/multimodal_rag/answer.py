@@ -148,7 +148,8 @@ def ask(
     """
     t0 = time.monotonic()
     sq = search_query(question, client, history)
-    result = answer(sq.question, retriever.search(sq.text, passage=sq.passage), client)
+    hits = retriever.search(sq.text, passage=sq.passage, question=sq.question)
+    result = answer(sq.question, hits, client)
     return Answer(
         result.text,
         result.citations,

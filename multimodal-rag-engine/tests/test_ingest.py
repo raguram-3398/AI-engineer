@@ -132,3 +132,19 @@ def test_written_chunks_respect_the_contract() -> None:
     assert len(ids) == len(set(ids))
     assert all(r["chunk_id"].startswith(f"{r['doc_id']}-{r['page']}-") for r in rows)
     assert all(0 < r["n_tokens"] <= MAX_TOKENS for r in rows)
+
+
+@pytest.mark.skipif(not CHUNKS_PATH.is_file(), reason="run ingest first")
+def test_committed_chunks_match_the_live_index() -> None:
+    """Chunking regression: the committed chunks.jsonl is the one index v2 was
+    built from (4,183 text + 542 vision chunks), and each page's chunks are
+    numbered 0..n-1 with no gap, so a re-chunk that drifts from the live index
+    fails here before the retriever meets an id it cannot resolve."""
+    rows = [json.loads(line) for line in CHUNKS_PATH.open(encoding="utf-8")]
+    kinds = [r["kind"] for r in rows]
+    assert (kinds.count("text"), kinds.count("vision")) == (4183, 542)
+    numbers: dict[tuple[str, int], list[int]] = {}
+    for r in rows:
+        n = int(r["chunk_id"].rsplit("-", 1)[1])
+        numbers.setdefault((r["doc_id"], r["page"]), []).append(n)
+    assert all(sorted(ns) == list(range(len(ns))) for ns in numbers.values())

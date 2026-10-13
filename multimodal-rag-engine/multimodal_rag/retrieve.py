@@ -1,5 +1,6 @@
 """Retrieve: question -> (rewrite / HyDE) -> BGE vector -> Pinecone -> list[Hit],
 or with RETRIEVAL=hybrid (Day 32): Pinecone and BM25 lists fused by RRF.
+With RERANK=1 (Day 33) a cross-encoder re-scores those hits against the question.
 
 Hit text comes from `chunks.jsonl`, the same file the live index was built from
 (README, re-index step 4), not from Pinecone metadata. BM25 is built from the
@@ -31,6 +32,8 @@ from multimodal_rag.config import (
     PRICE_IN_PER_MTOK,
     PRICE_OUT_PER_MTOK,
     QUERY_PREFIX,
+    RERANK,
+    RERANK_MODEL,
     RETRIEVAL,
     REWRITE,
     REWRITE_MAX_TOKENS,
@@ -192,15 +195,16 @@ def rrf(rankings: Sequence[Sequence[str]], k: int = RRF_K) -> list[tuple[str, fl
 
 
 class Retriever:
-    """Holds the BGE model, the Pinecone index handle, the chunk map and, for
-    hybrid, the BM25 index over the same chunks.
+    """Holds the BGE model, the Pinecone index handle, the chunk map, for hybrid
+    the BM25 index over the same chunks and, with rerank, the cross-encoder.
 
     Build once per process; `search` is then one local embed + one Pinecone call
-    (+ one local BM25 scoring pass for hybrid).
+    (+ one local BM25 scoring pass for hybrid, + one local cross-encoder batch
+    for rerank).
     """
 
-    def __init__(self, strategy: str = RETRIEVAL) -> None:
-        from sentence_transformers import SentenceTransformer
+    def __init__(self, strategy: str = RETRIEVAL, rerank: bool = RERANK) -> None:
+        from sentence_transformers import CrossEncoder, SentenceTransformer
 
         if strategy not in ("vector", "hybrid"):
             raise ValueError(f"RETRIEVAL must be vector or hybrid, got {strategy!r}")
@@ -209,6 +213,7 @@ class Retriever:
         self.chunks = load_chunks()
         if strategy == "hybrid":
             self.build_bm25()
+        self.reranker = CrossEncoder(RERANK_MODEL, device="cpu") if rerank else None
         pc = Pinecone(
             api_key=os.environ["PINECONE_API_KEY"], timeout=PINECONE_TIMEOUT_S
         )
@@ -229,21 +234,43 @@ class Retriever:
         prefix = "" if passage else QUERY_PREFIX
         return self.model.encode(prefix + text, normalize_embeddings=True).tolist()
 
-    def search(self, text: str, k: int = TOP_K, passage: bool = False) -> list[Hit]:
+    def search(
+        self,
+        text: str,
+        k: int = TOP_K,
+        passage: bool = False,
+        question: str | None = None,
+    ) -> list[Hit]:
         """Top-k chunks for `text`, best first, by the Retriever's strategy.
 
         vector: `vector_search` (score = cosine). hybrid: the top-k of
         `vector_search` and of `bm25_search` fused by `rrf` (score = RRF score,
-        ~0.016-0.033, not comparable with cosine). Raises as `vector_search`.
+        ~0.016-0.033, not comparable with cosine). With a reranker, those k hits
+        are then reordered by `rerank` against `question` (default: `text`;
+        pass the question when `text` is a HyDE passage). Raises as
+        `vector_search`.
         """
-        vector = self.vector_search(text, k, passage)
-        if self.strategy == "vector":
-            return vector
-        bm25 = self.bm25_search(text, k)
-        fused = rrf(
-            [[h.chunk.chunk_id for h in vector], [h.chunk.chunk_id for h in bm25]]
-        )
-        return [Hit(self.chunks[cid], score) for cid, score in fused[:k]]
+        hits = self.vector_search(text, k, passage)
+        if self.strategy == "hybrid":
+            bm25 = self.bm25_search(text, k)
+            fused = rrf(
+                [[h.chunk.chunk_id for h in hits], [h.chunk.chunk_id for h in bm25]]
+            )
+            hits = [Hit(self.chunks[cid], score) for cid, score in fused[:k]]
+        if self.reranker is None:
+            return hits
+        return self.rerank(text if question is None else question, hits)
+
+    def rerank(self, question: str, hits: list[Hit]) -> list[Hit]:
+        """`hits` reordered by the cross-encoder's score for (question, chunk
+        text), best first; `Hit.score` becomes that score (a logit, -11.5 to
+        10.8 on the 364 queries; higher = more relevant). Pairs over 512 tokens
+        lose the end of the chunk. One local batch, no network; [] for no hits."""
+        if not hits:
+            return []
+        scores = self.reranker.predict([(question, h.chunk.text) for h in hits])
+        order = sorted(range(len(hits)), key=lambda i: -scores[i])
+        return [Hit(hits[i].chunk, float(scores[i])) for i in order]
 
     def bm25_search(self, text: str, k: int = TOP_K) -> list[Hit]:
         """Top-k chunks by BM25 score (> 0 only), best first. A query sharing no
