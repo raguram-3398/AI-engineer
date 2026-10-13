@@ -4,8 +4,8 @@ Free retrieval eval (no Claude): page-level recall@10 and NDCG@10 on all 364
 English queries, split by visual content type, and the fixed eval sample.
     python -m multimodal_rag.evaluate
 
-Both follow the REWRITE / HYDE flags (Day 31) and RETRIEVAL (Day 32), e.g.
-`RETRIEVAL=vector python -m ...`.
+Both follow the REWRITE / HYDE flags (Day 31), RETRIEVAL (Day 32) and RERANK
+(Day 33), e.g. `RERANK=1 python -m ...`.
 
 Ten two-turn conversations (Claude rewrites the follow-ups; retrieval metrics only):
     python -m multimodal_rag.evaluate followups
@@ -21,6 +21,7 @@ import logging
 import math
 import random
 import sys
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -51,6 +52,7 @@ from multimodal_rag.config import (
     QRELS_PATH,
     QUERIES_PATH,
     RAGAS_MAX_TOKENS,
+    RERANK,
     RETRIEVAL,
     REWRITE,
     SAMPLE_PATH,
@@ -170,12 +172,16 @@ def retrieval_scores(
     queries: pd.DataFrame, retriever: Retriever, client: anthropic.Anthropic
 ) -> pd.DataFrame:
     """Per query: page-level recall@10, NDCG@10, whether the top chunks held
-    fewer than EVAL_K distinct pages, the query's content types and format, and
-    the rewrite / HyDE cost."""
+    fewer than EVAL_K distinct pages, the query's content types and format, the
+    rewrite / HyDE cost and the wall time of `retriever.search` in ms (embed,
+    Pinecone, BM25, RRF, rerank; not the rewrite / HyDE calls)."""
     rows = []
     sqs = search_queries(list(queries["query"]), client)
     for q, sq in zip(queries.itertuples(), sqs):
-        ranked = ranked_pages(retriever.search(sq.text, passage=sq.passage))
+        t0 = time.perf_counter()
+        hits = retriever.search(sq.text, passage=sq.passage, question=sq.question)
+        search_ms = (time.perf_counter() - t0) * 1000
+        ranked = ranked_pages(hits)
         rows.append(
             {
                 "query_id": q.query_id,
@@ -185,6 +191,7 @@ def retrieval_scores(
                 "content_type": set(q.content_type),
                 "format": q.query_format,
                 "cost": sq.cost_usd,
+                "search_ms": search_ms,
             }
         )
     return pd.DataFrame(rows)
@@ -268,7 +275,10 @@ def run_sample(
         return replace(a, cost_usd=a.cost_usd + sq.cost_usd)
 
     sqs = search_queries([q for _, q, _ in items], client)
-    hits = [retriever.search(sq.text, passage=sq.passage) for sq in sqs]
+    hits = [
+        retriever.search(sq.text, passage=sq.passage, question=sq.question)
+        for sq in sqs
+    ]
     with ThreadPoolExecutor(EVAL_WORKERS) as pool:
         answers = list(pool.map(answer_one, items, hits, sqs))
     return [
@@ -536,7 +546,12 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         "label": label,
         "index": INDEX_NAME,
-        "flags": {"rewrite": REWRITE, "hyde": HYDE, "retrieval": RETRIEVAL},
+        "flags": {
+            "rewrite": REWRITE,
+            "hyde": HYDE,
+            "retrieval": RETRIEVAL,
+            "rerank": RERANK,
+        },
         "metrics": metrics,
         "n_answered": sum(is_answered),
         "n_refused": sum(r.answer.refused for r in results),
@@ -617,7 +632,7 @@ def main() -> None:
     n_many_gold = int((queries.gold.map(len) > EVAL_K).sum())
     print(
         f"index {INDEX_NAME}, page-level @{EVAL_K}, REWRITE={REWRITE} HYDE={HYDE}"
-        f" RETRIEVAL={RETRIEVAL}"
+        f" RETRIEVAL={RETRIEVAL} RERANK={RERANK}"
     )
     print_retrieval("all queries", res)
     print_retrieval("non-sample (decides flags)", res[~in_sample])
@@ -627,6 +642,8 @@ def main() -> None:
         print(f"{name}: {value:.4f}")
     print(f"queries with < {EVAL_K} distinct pages in top chunks: {res.short.sum()}")
     print(f"queries with > {EVAL_K} gold pages: {n_many_gold}")
+    p50, p95 = res.search_ms.quantile([0.5, 0.95])
+    print(f"search latency: p50 {p50:.0f} ms, p95 {p95:.0f} ms")
     print(
         f"sample: {len(sample['answerable'])} answerable ({n_visual} visual)"
         f" + {len(sample['unanswerable'])} unanswerable"

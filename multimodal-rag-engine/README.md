@@ -75,7 +75,7 @@ Frozen dataclasses passed between stages:
 | `Page` | `doc_id`, `page` (0-indexed), `text`, `ocr: bool` | ingest → chunking |
 | `Chunk` | `chunk_id` (`doc_id-page-n`), `doc_id`, `page`, `text`, `n_tokens`, `kind` (`text` or `vision`) | chunking → index, BM25, answer |
 | `SearchQuery` | `question` (what Claude answers), `text` (what BGE embeds), `passage: bool` (HyDE), `cost_usd` | retrieve → retrieve, answer, eval |
-| `Hit` | `chunk: Chunk`, `score` (cosine; RRF score under `RETRIEVAL=hybrid`) | retrieve → answer, eval |
+| `Hit` | `chunk: Chunk`, `score` (cosine; RRF score under `RETRIEVAL=hybrid`; cross-encoder logit under `RERANK=1`) | retrieve → answer, eval |
 | `Citation` | `chunk_id`, `doc_id`, `page`, `cited_text`, `score`, `generated: bool` | answer → UI, eval |
 | `Answer` | `text`, `citations`, `abstained`, `cost_usd`, `latency_s`, `confidence` (added Day 34) | answer → UI, eval |
 
@@ -303,6 +303,55 @@ Findings:
 - Question words ("what", "did", "why", "does") keep a positive IDF (2.5–4.1) because they occur in under half the chunks. They pull BM25 toward book prose on question-phrased queries (204, 319). Stopwords were not tried.
 - Mac full eval: every gated metric held or rose. The retrieval gain reached the answer side: context precision +0.075, context recall +0.036, answered 49 → 51 of 60, with faithfulness and answer relevancy slightly up (+0.007, +0.011) and 20/20 unanswerable still abstained. Accepted; hybrid is the default. The sandbox run of the same code had faithfulness and answer relevancy slightly down (0.911, 0.819): the same run-to-run spread seen since Day 29.
 - BM25 cost (sandbox CPU): build 0.3 s for 4,725 chunks at startup; 15 ms per query (BM25Okapi scores every chunk).
+
+## Reranking (Day 33)
+
+Run: `RERANK=1 python -m multimodal_rag.evaluate` (free; ~9 min on 2 sandbox CPUs). **`RERANK` stays off:** Ram's Mac full eval failed the gate on unanswerable abstain (19/20, trap ua03; see below). The code, tests and measurements stay.
+
+With `RERANK=1`, `Retriever` loads `cross-encoder/ms-marco-MiniLM-L6-v2` once at startup. After hybrid retrieval returns its fused top 20, the cross-encoder scores each (question, chunk text) pair in one local batch and reorders the 20 by that score. Reranking adds no chunk and drops none. `Hit.score` and `Citation.score` become the cross-encoder logit (−11.5 to 10.8 on the 364 queries). The pair uses the question Claude answers, never a HyDE passage. Pairs over the model's 512 tokens lose the end of the chunk: 60 of 7,280 pairs (0.8%).
+
+### Day 33 results (sandbox, index v2, hybrid; free retrieval metrics, page-level @10)
+
+| Queries | hybrid | **hybrid + rerank** |
+|---|---|---|
+| all 364: recall / NDCG | 0.6195 / 0.5642 | **0.6350 / 0.6047** |
+| **304 non-sample (decides)**: recall / NDCG | 0.6352 / 0.5713 | **0.6517 / 0.6174** |
+| 57 keyword: recall / NDCG | 0.5744 / 0.5361 | **0.5980 / 0.5491** |
+| recall Chart / Infographic / Image | 0.5054 / 0.4753 / 0.4112 | **0.5362 / 0.4877 / 0.4490** |
+| gold page ranked first (304) | 166 | **193** |
+| search latency p50 / p95 (`Retriever.search`, 2 sandbox CPUs) | 115 / 151 ms | **1,491 / 1,990 ms** |
+| search latency p50 / p95 (Ram's M3) | – | 379 / 503 ms |
+| rerank alone p50 / p95 / max (20 pairs) | – | 1,355 / 1,904 / 2,205 ms |
+
+Per query on the 304: recall 51 up, 26 down, 227 equal; NDCG 136 up, 72 down. Ram's Mac: retrieval metrics identical.
+
+Latency is measured on the sandbox CPU (2 cores, the same count as HF cpu-basic). One question end to end with `answer.py` (an abstain): 2.44 s without rerank, 3.84 s with. Reranking takes more than 10× the rest of retrieval.
+
+Day 32's RRF losses: all four pages that RRF pushed out of the top 10 (326, 204, 319, 102) were still in the fused 20, and reranking put them back in the top 10 (recall 0 → 1, 0.33, 1, 1). Reranking cannot recover a page that is not among the 20.
+
+Full eval (gated on Ram's Mac vs the last passed run, Mac hybrid; the sandbox run checked the code first and is not a baseline):
+
+| Measure | hybrid (Mac, accepted) | hybrid (sandbox, Day 32) | hybrid + rerank (sandbox) | **hybrid + rerank (Mac, rejected)** |
+|---|---|---|---|---|
+| faithfulness | 0.9259 | 0.9106 | 0.9216 | **0.8887** |
+| answer relevancy | 0.8443 | 0.8186 | 0.7992 | **0.8223** |
+| context precision | 0.5334 | 0.5710 | 0.6330 | **0.5829** |
+| context recall | 0.5848 | 0.6160 | 0.6751 | **0.6667** |
+| judge faithfulness / relevance / completeness | 3.63 / 3.45 / 2.93 | 3.65 / 3.43 / 2.97 | 3.45 / 3.45 / 2.87 | **3.77 / 3.43 / 2.93** |
+| unanswerable abstained | 20/20 | 20/20 | 20/20 | **19/20** (ua03 answered) |
+| answerable answered | 51/60 | 52/60 | 51/60 | **50/60** |
+| refused | 0 | 0 | 0 | **0** |
+| gate | PASS | PASS | PASS (answer relevancy −0.045 vs the Mac run, threshold 0.05) | **FAIL** (unanswerable abstained; threshold: any drop) |
+| run cost | $0.543 | $0.548 | $0.560 | **$0.555** |
+
+Findings:
+- Reranking beats hybrid on the 304 non-sample queries: recall +0.017, NDCG +0.046. NDCG gains more than recall because most of the change is order inside the top 10: 27 more queries have a gold page at rank 1.
+- Every content type rose, Image most (+0.038). Image was the one type hybrid lowered on Day 32.
+- The answer side follows retrieval: context precision +0.06 and context recall +0.06 over the sandbox hybrid run.
+- Sandbox answer relevancy 0.799 (Mac 0.822) is the open Day 30 drift issue (each run is compared only to the last passed run), not the reason for rejection.
+- Cost: the cross-encoder runs locally ($0). The price is ~1.4 s per query on 2 CPUs; the M3's whole search with rerank is 379 ms p50.
+- Why the Mac run failed: ua03 asks what fraction of the annual facility fee contract manufacturers (CMOs) pay under GDUFA III; the corpus only covers GDUFA II (one-third). With rerank, Claude answered "one-third, but under GDUFA II, not GDUFA III" in 3 of 4 runs (Mac full run + 2 of 2 sandbox repeats; the sandbox full run abstained). Without rerank: 1 of 6 (1 of 4 sandbox repeats; both full runs abstained). Retrieval is identical on both machines, so the difference is Claude's sampling over a different context. It is not the top chunk's rank: the GDUFA II CMO slide is rank 1 under hybrid too. Rerank brings 3 more GDUFA fee slides into the top 10, including a second "CMOs pay 1/3" slide, and with more matching evidence Claude answers the near-miss. The answer flags the version mismatch, but by the abstain rule fixed on Day 29 it is an answer. Diagnosis cost $0.027.
+- Decision (Ram, 2026-10-13): rejected by the gate; `RERANK` stays off. Rerunning until it passes, or counting ua03's caveated answer as an abstain after seeing it, would change the eval after the result. The Day 35 app therefore also avoids ~1.4 s per query on cpu-basic.
 
 ## Indexing
 

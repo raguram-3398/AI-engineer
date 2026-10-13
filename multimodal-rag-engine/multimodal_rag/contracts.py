@@ -36,7 +36,8 @@ class Chunk:
 @dataclass(frozen=True)
 class Hit:
     """One retrieved chunk and its retrieval score: cosine similarity (vector),
-    BM25 score (`bm25_search`) or RRF score (hybrid, Day 32)."""
+    BM25 score (`bm25_search`), RRF score (hybrid, Day 32) or cross-encoder
+    logit (RERANK=1, Day 33)."""
 
     chunk: Chunk
     score: float
@@ -62,7 +63,8 @@ class SearchQuery:
 class Citation:
     """A verified quote: `cited_text` is exactly `chunk.text[start:end]` of `chunk_id`.
 
-    `page` is 0-indexed. `score` is the retrieval score of the cited chunk.
+    `page` is 0-indexed. `score` is the cited chunk's `Hit.score`
+    (cosine, RRF or cross-encoder logit, by the flags).
     `generated` marks quotes from generated vision descriptions (Day 30).
     """
 
