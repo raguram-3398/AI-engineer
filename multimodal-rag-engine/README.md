@@ -306,7 +306,7 @@ Findings:
 
 ## Reranking (Day 33)
 
-Run: `RERANK=1 python -m multimodal_rag.evaluate` (free; ~9 min on 2 sandbox CPUs). **`RERANK` stays off:** Ram's Mac full eval failed the gate on unanswerable abstain (19/20, trap ua03; see below). The code, tests and measurements stay.
+Run: `RERANK=1 python -m multimodal_rag.evaluate` (free; ~9 min on 2 sandbox CPUs). Ram's first Mac full eval failed the gate on unanswerable abstain (19/20, trap ua03; see below). After the version/year abstain rule (addendum below) it passed: **`RERANK` is on by default since 2026-10-13**; `RERANK=0` for hybrid without rerank.
 
 With `RERANK=1`, `Retriever` loads `cross-encoder/ms-marco-MiniLM-L6-v2` once at startup. After hybrid retrieval returns its fused top 20, the cross-encoder scores each (question, chunk text) pair in one local batch and reorders the 20 by that score. Reranking adds no chunk and drops none. `Hit.score` and `Citation.score` become the cross-encoder logit (−11.5 to 10.8 on the 364 queries). The pair uses the question Claude answers, never a HyDE passage. Pairs over the model's 512 tokens lose the end of the chunk: 60 of 7,280 pairs (0.8%).
 
@@ -351,7 +351,46 @@ Findings:
 - Sandbox answer relevancy 0.799 (Mac 0.822) is the open Day 30 drift issue (each run is compared only to the last passed run), not the reason for rejection.
 - Cost: the cross-encoder runs locally ($0). The price is ~1.4 s per query on 2 CPUs; the M3's whole search with rerank is 379 ms p50.
 - Why the Mac run failed: ua03 asks what fraction of the annual facility fee contract manufacturers (CMOs) pay under GDUFA III; the corpus only covers GDUFA II (one-third). With rerank, Claude answered "one-third, but under GDUFA II, not GDUFA III" in 3 of 4 runs (Mac full run + 2 of 2 sandbox repeats; the sandbox full run abstained). Without rerank: 1 of 6 (1 of 4 sandbox repeats; both full runs abstained). Retrieval is identical on both machines, so the difference is Claude's sampling over a different context. It is not the top chunk's rank: the GDUFA II CMO slide is rank 1 under hybrid too. Rerank brings 3 more GDUFA fee slides into the top 10, including a second "CMOs pay 1/3" slide, and with more matching evidence Claude answers the near-miss. The answer flags the version mismatch, but by the abstain rule fixed on Day 29 it is an answer. Diagnosis cost $0.027.
-- Decision (Ram, 2026-10-13): rejected by the gate; `RERANK` stays off. Rerunning until it passes, or counting ua03's caveated answer as an abstain after seeing it, would change the eval after the result. The Day 35 app therefore also avoids ~1.4 s per query on cpu-basic.
+- Decision (Ram, 2026-10-13): rejected by the gate; `RERANK` stays off. Revisited below: Ram chose to fix the cause with a prompt rule and re-measure; both Mac runs passed and rerank is now the default. Rerunning until it passes, or counting ua03's caveated answer as an abstain after seeing it, would have changed the eval after the result; the fix was a separate, gated prompt change. The Day 35 app pays ~1.4 s per query on cpu-basic for rerank.
+
+### Version/year mismatch abstain rule (Day 33 addendum)
+
+`SYSTEM_PROMPT` gains one sentence: "If the question asks about a specific version, edition, year or period and the documents only cover a different one, the documents do not contain the answer."
+
+Caveat, stated before the runs: the failure it targets was found on ua03, which is in the gated sample. Outside the sample it did not reproduce, so the rule could not be developed on non-sample data. `data/eval/dev_mismatch.jsonl` holds 11 hand-written near-miss traps (each asks for a year or version the corpus lacks while it covers a neighbouring one; 3 copy ua03's structure, e.g. "Under GDUFA III, what percentage of ANDAs are refused to receive?") and 13 non-sample answerable queries that name a year or version.
+
+| Check (answer calls only, sandbox) | old prompt | old + rerank | new prompt | new + rerank |
+|---|---|---|---|---|
+| 11 near-miss traps abstained | 11 | 11 | 11 | 11 |
+| 13 year/version controls answered | 13 | 13 | 13 | 13 |
+| ua03 answered, 8 repeats each | – | **7 of 8** | 0 of 8 | **0 of 8** |
+
+The dev set cannot fail (the old prompt already abstains on every trap), so it shows only that the rule broke none of the 13 controls. The ua03 repeats are the only evidence the rule works, and they are on a sample item. Check cost: $0.14.
+
+Acceptance, fixed before the Mac runs, one run each, no reruns:
+- Run A (new prompt, `RERANK` off) vs the last passed Mac run (hybrid). PASS → prompt kept. FAIL → prompt rejected, no run B, rerank stays off.
+- Run B (new prompt, `RERANK=1`) vs run A. PASS → `RERANK` on by default. FAIL → rerank stays off.
+
+| Measure | hybrid (Mac, last passed) | new prompt + rerank (sandbox) | run A (Mac) | run B (Mac) |
+|---|---|---|---|---|
+| recall@10 / NDCG@10 | 0.6195 / 0.5642 | 0.6350 / 0.6047 | 0.6195 / 0.5642 | **0.6350 / 0.6047** |
+| faithfulness | 0.9259 | 0.9236 | 0.9121 | **0.9026** |
+| answer relevancy | 0.8443 | 0.8106 | 0.8268 | **0.8318** |
+| context precision | 0.5334 | 0.6011 | 0.5509 | **0.6230** |
+| context recall | 0.5848 | 0.6709 | 0.6265 | **0.6640** |
+| judge faithfulness / relevance / completeness | 3.63 / 3.45 / 2.93 | 3.53 / 3.48 / 2.93 | 3.53 / 3.33 / 2.80 | **3.82 / 3.43 / 2.97** |
+| unanswerable abstained | 20/20 | 20/20 | 20/20 | **20/20** |
+| answerable answered | 51/60 | 49/60 | 50/60 | **51/60** |
+| refused | 0 | 0 | 0 | **0** |
+| gate | PASS | PASS (answered −2/60, at the threshold) | PASS vs hybrid → prompt kept | **PASS vs run A → rerank on** |
+| run cost | $0.543 | $0.545 | $0.552 | **$0.565** |
+
+Findings:
+- Both runs passed. Run A: the rule alone cost 1 answerable question on the Mac (51 → 50/60; the sandbox lost 2) and held 20/20 unanswerable. Run B: rerank on top recovered it (51/60) with 20/20 unanswerable, so rerank is on by default (`RERANK=0` turns it off).
+- Against the last passed run before Day 33 (Mac hybrid), rerank + rule: recall@10 +0.016, NDCG@10 +0.041, context precision +0.090, context recall +0.079, judge faithfulness +0.19, answered and unanswerable unchanged.
+- Faithfulness drifted 0.926 → 0.912 → 0.903 across the two passed runs (each within 0.05 of the run before, 0.023 below hybrid in total): the same compare-to-last-passed weakness noted for answer relevancy on Day 30.
+- What this does not show: that the rule generalizes. Its only measured effect is on ua03, a sample item (7 of 8 answered → 0 of 8); the 11 non-sample traps were already abstained without it.
+- Day 33 spend ≈ $2.9 (sandbox full runs $1.11, Mac full runs $1.67, checks and diagnosis $0.17).
 
 ## Indexing
 

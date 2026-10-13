@@ -28,6 +28,9 @@ log = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You answer questions about FDA documents using only the documents provided. "
     "Cite the passages that support each claim. Do not use outside knowledge. "
+    "If the question asks about a specific version, edition, year or period and "
+    "the documents only cover a different one, the documents do not contain the "
+    "answer. "
     "If the documents do not contain the answer, reply with exactly this sentence "
     f"and nothing else: {ABSTAIN_TEXT}"
 )

@@ -72,9 +72,10 @@ RRF_K: int = 60  # RRF constant from Cormack et al. (2009); not tuned
 # "to" IDF 1.79, above "fda" (1.21) and "drug" (0.97). 0 scores them 0 (Day 32).
 BM25_EPSILON: float = 0.0
 
-# Reranker (Day 33). RERANK=1 in the environment turns it on: a cross-encoder
-# re-scores the TOP_K retrieved chunks against the question, best first.
-RERANK: bool = os.environ.get("RERANK") == "1"
+# Reranker (Day 33): a cross-encoder re-scores the TOP_K retrieved chunks against
+# the question, best first. Default since Ram's Mac run passed the gate with the
+# version/year abstain rule (2026-10-13); RERANK=0 turns it off.
+RERANK: bool = os.environ.get("RERANK", "1") == "1"
 RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L6-v2"  # 512-token pair limit
 
 # Answer
