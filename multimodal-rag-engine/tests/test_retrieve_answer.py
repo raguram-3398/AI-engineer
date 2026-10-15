@@ -6,15 +6,16 @@ retry. No network calls."""
 from types import SimpleNamespace as NS
 
 import pytest
-from pinecone.errors import PineconeTimeoutError
+from pinecone.errors import PineconeTimeoutError, RateLimitError
 
 from multimodal_rag.answer import (
     answer,
+    ask,
     build_documents,
     check_and_retry,
     verify_citations,
 )
-from multimodal_rag.config import ABSTAIN_TEXT, QUERY_PREFIX, REFUSAL_TEXT
+from multimodal_rag.config import ABSTAIN_TEXT, ANSWER_K, QUERY_PREFIX, REFUSAL_TEXT
 from multimodal_rag.contracts import Answer, Chunk, Hit
 from multimodal_rag.retrieve import QueryError, Retriever, rrf, search_query, tokenize
 
@@ -146,6 +147,29 @@ def test_pinecone_timeout_becomes_query_error() -> None:
 
     with pytest.raises(QueryError, match="Pinecone unavailable"):
         _retriever(NS(query=query)).search("q")
+
+
+def test_pinecone_rate_limit_becomes_query_error() -> None:
+    """A 429 that outlasts the SDK's own retries reaches the app as QueryError,
+    not as an uncaught exception."""
+
+    def query(**kwargs):
+        raise RateLimitError()
+
+    with pytest.raises(QueryError, match="RateLimitError"):
+        _retriever(NS(query=query)).search("q")
+
+
+def test_ask_returns_the_hits_claude_read() -> None:
+    """The app shows the pages and RAGAS scores the answer against them: the
+    first ANSWER_K of the 20 searched."""
+    chunks = [Chunk(f"deck-{p}-0", "deck", p, TEXT, 12, "text") for p in range(20)]
+    matches = [NS(id=c.chunk_id, score=0.9 - p / 100) for p, c in enumerate(chunks)]
+    r = _retriever(NS(query=lambda **kw: NS(matches=matches)), chunks=chunks)
+    client = FakeClient([NS(type="text", text="50.", citations=None)])
+    ans, hits = ask("q", r, client, self_check_on=False)
+    assert ans.text == "50." and len(client.calls[0]["messages"][0]["content"]) == 11
+    assert [h.chunk.page for h in hits] == list(range(ANSWER_K))
 
 
 def test_id_missing_from_chunk_file_raises() -> None:

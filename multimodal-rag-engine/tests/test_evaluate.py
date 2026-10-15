@@ -145,3 +145,13 @@ def test_gate_ignores_improvements_and_fails_on_nan() -> None:
     better = {m: 0.9 for m in BASE}
     assert gate(better, BASE) == []
     assert gate({**BASE, "faithfulness": float("nan")}, BASE) == ["faithfulness"]
+
+
+def test_ragas_judge_uses_the_given_key_not_the_environment(monkeypatch) -> None:
+    """The app passes the visitor's key; ChatAnthropic would otherwise fall back
+    to ANTHROPIC_API_KEY (Ram's key on the Mac)."""
+    from multimodal_rag.evaluate import ragas_llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-env")
+    llm = ragas_llm("sk-visitor").langchain_llm
+    assert llm.anthropic_api_key.get_secret_value() == "sk-visitor"
