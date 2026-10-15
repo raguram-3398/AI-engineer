@@ -270,24 +270,28 @@ def ask(
     client: anthropic.Anthropic,
     history: Sequence[str] = (),
     self_check_on: bool = SELF_CHECK,
-) -> Answer:
+) -> tuple[Answer, list[Hit]]:
     """Transform the question (follow-up rewrite, REWRITE, HYDE), retrieve, answer,
     and with SELF_CHECK check the answer and retry once (`check_and_retry`).
 
     `history` = the conversation's earlier user questions, oldest first.
-    `cost_usd` includes the rewrite / HyDE calls; `latency_s` covers all steps.
+    Returns the answer and the ANSWER_K hits it was written from (after a
+    retry, the retry's). `cost_usd` includes the rewrite / HyDE calls;
+    `latency_s` covers all steps.
     """
     t0 = time.monotonic()
     sq = search_query(question, client, history)
     hits = retriever.search(sq.text, passage=sq.passage, question=sq.question)
     result = answer(sq.question, hits, client)
+    hits = hits[:ANSWER_K]
     if self_check_on:
-        result, _ = check_and_retry(sq.question, result, hits, retriever, client)
-    return replace(
+        result, hits = check_and_retry(sq.question, result, hits, retriever, client)
+    final = replace(
         result,
         cost_usd=result.cost_usd + sq.cost_usd,
         latency_s=time.monotonic() - t0,
     )
+    return final, hits
 
 
 def main() -> None:
@@ -295,7 +299,7 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     log.setLevel(logging.INFO)  # this module's cost line; not the HTTP libraries'
     load_dotenv(PROJECT_DIR / ".env")
-    result = ask(sys.argv[1], Retriever(), anthropic.Anthropic())
+    result, _ = ask(sys.argv[1], Retriever(), anthropic.Anthropic())
     print(result.text, "\n")
     for c in result.citations:
         where = f"{c.doc_id} p.{c.page + 1} [{c.chunk_id}, {c.score:.3f}]"

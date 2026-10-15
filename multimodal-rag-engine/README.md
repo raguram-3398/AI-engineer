@@ -52,8 +52,9 @@ Package `multimodal_rag/`.
 | `retrieve.py` | Vector search, BM25, RRF, rerank, rewrite/HyDE | 28, 31–33 |
 | `answer.py` | Haiku call with citations, citation verification, abstain, cost, self-check | 28, 34 |
 | `vision.py` | Slide image → Haiku description | 30 |
-| `evaluate.py` | Retrieval metrics, RAGAS, LLM judge, abstain score, gate, score log, follow-up tests | 28–29, 31 |
-| `streamlit_app.py` (repo root) | One-page UI | 35 |
+| `evaluate.py` | Retrieval metrics, RAGAS, LLM judge, abstain score, gate, score log, follow-up tests, live RAGAS for the app | 28–29, 31, 35 |
+| `streamlit_app.py` (project root) | One-page UI | 35 |
+| `Dockerfile`, `docker-compose.yml`, `requirements-app.txt` (project root) | App image: CPU-only torch, models baked in; local run | 35 |
 
 ### Data files
 
@@ -105,6 +106,8 @@ every final chunk ≤ 510 BGE tokens and never crosses a page
 - Haiku 5.5: never pass `temperature`. RAGAS uses `bypass_temperature=True` with `langchain-community<0.4`.
 - Rerank at most the top 20 (~1.6 s on 2 CPUs).
 - Docker uses CPU-only torch.
+- The app's Claude calls (answers, rewrites, live RAGAS) always get the visitor's key explicitly; the SDK and `ChatAnthropic` would otherwise fall back to `ANTHROPIC_API_KEY`. The container gets only `PINECONE_API_KEY`.
+- The container runs Streamlit with the file watcher off: walking every loaded module made `transformers` log ~2,400 lines of import errors.
 - The eval sample is never used for tuning.
 
 ## Retrieval and answering (Day 28)
@@ -470,6 +473,90 @@ Findings:
 - Cost: about +$0.0006 per question on average. Latency: +1.4–2.4 s on every answered question, about +15 s on a retried one; on the HF Space's 2 vCPU, rerank time is included in that.
 - **Decision (Ram): `SELF_CHECK` off by default.** Code, tests, flag and numbers kept.
 - Day 34 spend ≈ $1.5: checks $0.07, sandbox full run $0.70, Mac full run $0.70, latency and single-question tests $0.011.
+
+## App (Day 35)
+
+Run locally: `docker compose up --build`, then open http://localhost:7860 and paste an Anthropic API key in the sidebar. Compose reads `PINECONE_API_KEY` from `.env` and passes only that into the container. Without Docker: `PINECONE_API_KEY=… streamlit run streamlit_app.py`.
+
+One page, one process (Streamlit calls the pipeline directly; no API server). The pipeline is the gated default: hybrid + rerank + version/year rule, `SELF_CHECK` off.
+
+- **Sidebar:** the visitor's key (password field, kept in Streamlit session state, gone on reload), what the documents are and that every answer is cited or declined, that answers are scored live with RAGAS with Claude Haiku as the judge, "not medical or regulatory advice" with the dataset credit (CC BY 4.0), and 5 example questions. No offline eval table (removed by Ram; the numbers are in this README).
+- **Each question is one row.** Left: the question as a heading, the answer, then "Citations": each cited passage (PDF, page, "AI description of the slide" for vision chunks); or the abstain / refusal text, or the `QueryError` message. Right: "This question" (answer cost, latency), "Pages Claude Haiku read" (page, reranker relevance, document), then "Answer quality (RAGAS)" (faithfulness, answer relevancy as large numbers, scoring cost below), computed after the answer is on screen. Abstains and refusals get no RAGAS (nothing to score).
+- **Follow-ups:** the session's earlier questions go to `ask` as history, so the Day 31 rewriter makes the follow-up standalone.
+- **Per session:** at most `SESSION_QUERY_CAP = 20` questions (counted when submitted, errors included; resets on reload). A question without a key runs nothing.
+- **Shared once per process (`st.cache_resource`):** the `Retriever` (BGE, cross-encoder, BM25, chunk map, Pinecone handle) and one BGE copy for RAGAS answer relevancy.
+- `ask` now returns `(Answer, hits)`: the app shows the pages and RAGAS scores the answer against the chunks it was written from. Pinecone `RateLimitError` (429) is now a `QueryError`. `ragas_scores` was split into `ragas_llm(api_key)`, `ragas_embeddings()` and `ragas_run()` so the app reuses them; the full eval's behavior is unchanged (not re-run today: no pipeline change).
+
+### Day 35 results (sandbox, 2 CPUs; PyPI torch, the CPU-index host is blocked here)
+
+Checked on the server as the image runs it (a clean venv from `requirements-app.txt`, only the files the Dockerfile copies, `HF_HUB_OFFLINE=1`, no `ANTHROPIC_API_KEY` in the environment), driven in Chromium:
+
+| Measure | Value |
+|---|---|
+| First question after server start: answer on screen / RAGAS on screen | 13.0–15.0 s / 26.5–36.3 s (models load once: Retriever 10–16.5 s, RAGAS BGE 3.4 s) |
+| Warm question: answer on screen / RAGAS on screen | 4.5 s / 19.6 s |
+| Abstain (dev trap dm01) | 3.9 s, no RAGAS call |
+| Live RAGAS (faithfulness + answer relevancy) | 15–16.5 s, $0.0014–0.0036 per answered question |
+| Answer cost | $0.0007–0.0012 |
+| Process memory | 1,185 MB after the Retriever, 1,319 MB with the RAGAS BGE, 1,537 MB peak after one question (PyPI torch; CPU-only torch not measured) |
+| Shared Retriever, 4 threads × 8 searches | same results as sequential (one check, not a proof of thread safety) |
+
+The 5 example questions, once each ($0.004): 243 naloxone consumer research (answered, cited, recall@10 0.5), 255 ANDAs FY12 (1,103, from a generated chart description, recall 1.0), 254 RWE partners (NIH, HHS/ONC and UCSF, recall 1.0), 197 RTR FY15 vs FY16 (answers 19 → 25 from the chart and flags a conflicting 34.3% → 28.3% in another deck, recall 0.5), dm01 RTR FY2020 (abstained).
+
+Findings:
+- Live RAGAS takes 3–4× as long as the answer (two metrics, several Haiku calls each, with thinking). The answer is shown first, so it does not delay the answer.
+- Observed once: the follow-up "How did that change after GDUFA?" after "ANDAs received by FDA in FY12" was rewritten correctly ("How did the number of ANDAs received by FDA in FY12 change after GDUFA?") and then abstained. The FY12 chart also shows later years, so this looks like the version/year rule over-firing on a question that names one year and asks about others. Not investigated or changed (a prompt change needs a gated run).
+- Observed once: an answer on naloxone prices ended with a product name not in the cited chunks ("Narcan 4 mg nasal spray"); live faithfulness 0.93.
+- Two rendering fixes from real outputs: `$` is escaped in answers (26 chunks hold two or more dollar amounts, which Streamlit would render as LaTeX between them), and cited quotes are collapsed to one line, cut at 200 characters and deduplicated (Claude cites the same passage for several claims).
+
+Not verified today: the Docker build itself (no Docker in the sandbox, and `download.pytorch.org` is blocked here). Ram's `docker compose up` on the M3 builds a `linux/arm64` image; HF builds `amd64`, so the HF build is verified when the Space repo is made.
+
+### Blast radius (deploy)
+
+The app reads index `fda-bge-small-en-v1-5-v2` (query only), `data/chunks.jsonl` baked into the image, and calls Claude on the visitor's key. A bad app build affects only the running container. The app code never upserts or deletes, but the Pinecone key it gets is the one ingest upserts with, so it can write: the index is protected by the code, not by the key. Visitor keys live only in that visitor's session memory. Ram's Anthropic key never enters the container.
+
+### Rollback (deploy)
+
+- Code: `docker compose down`, `git revert` (or check out the last good commit), `docker compose up --build`. The image carries its own `chunks.jsonl`, so code and data roll back together.
+- Data: nothing to roll back from the app; it writes nothing. A damaged index is rebuilt by the re-index procedure below.
+
+### What I did not build and why
+
+| Not built | Why |
+|---|---|
+| HF Space deploy (live URL) | Scope today (Ram): local Docker first; the HF-only repo comes after the Mac check passes |
+| Document upload | Ingestion (OCR, parsing, embedding) on free cpu-basic, per-visitor namespaces, PII scrubbing, and no eval coverage on unknown documents; ~2 extra days |
+| Live context precision / recall | Need a reference answer, which visitor questions do not have; offline numbers are in this README |
+| Offline eval table in the app | Removed from the sidebar (Ram, Day 35); the numbers are in this README |
+| Self-check confidence in the UI | `SELF_CHECK` is off by default (Day 34 decision) |
+| Response cache, budget code | Visitors pay for their own Claude calls; the query cap limits Pinecone use |
+| Read-only Pinecone key | Not set up; the app's code never writes (see blast radius) |
+
+### Production Bar audit
+
+| Item | Status |
+|---|---|
+| Loader + validation + timeouts | done (27, 30) |
+| Pinecone with model + namespace metadata | done (27) |
+| Re-index procedure before needed | done (27), used on Day 30 |
+| Hybrid BM25 + vector + RRF behind a flag | done (32) |
+| Rewriting + HyDE vs baseline | done (31); both off |
+| Cross-encoder rerank, latency documented | done (33), on by default |
+| Self-eval loop, re-retrieval verified | done (34), off by default |
+| Citations: source, page, chunk ID, score | done (28, 30, 33) |
+| LLM-as-judge | done (29) |
+| Offline eval + regression gate | done (29), caught the Day 33 regression |
+| RAGAS before/after in README | done (29–34) |
+| Retrieval-layer tests | done (33) |
+| Cost tracking on every call | done (28); the app shows answer and RAGAS cost per question |
+| Human spot-check of 10 outputs | done (28, 34) |
+| Streamlit with live metrics | done (35): cost, latency, pages + scores, live faithfulness + answer relevancy |
+| Dockerized | written (35); first build is Ram's `docker compose up` |
+| Deployed, live URL | not done: HF Space after the local check |
+| Blast radius + rollback before deploy | done (27 data, 35 app) |
+| README: diagram, before/after, cost per query, what I did not build | done; HF end-to-end latency pending the Space |
+
+Day 35 spend ≈ $0.03 (example checks, app tests, latency measurements).
 
 ## Indexing
 

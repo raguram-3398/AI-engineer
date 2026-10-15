@@ -15,7 +15,12 @@ from pathlib import Path
 
 import anthropic
 from pinecone import Pinecone
-from pinecone.errors import PineconeConnectionError, PineconeTimeoutError, ServiceError
+from pinecone.errors import (
+    PineconeConnectionError,
+    PineconeTimeoutError,
+    RateLimitError,
+    ServiceError,
+)
 from rank_bm25 import BM25Okapi
 
 from multimodal_rag.config import (
@@ -312,8 +317,9 @@ class Retriever:
     ) -> list[Hit]:
         """Top-k chunks by cosine similarity to `text`, best first.
 
-        Raises QueryError if Pinecone times out, is unreachable or returns 5xx
-        (the SDK has already retried), or returns an id missing from chunks.jsonl.
+        Raises QueryError if Pinecone times out, is unreachable, returns 5xx or
+        429 (the SDK has already retried), or returns an id missing from
+        chunks.jsonl.
         """
         try:
             res = self.index.query(
@@ -322,7 +328,12 @@ class Retriever:
                 namespace=NAMESPACE,
                 timeout=PINECONE_TIMEOUT_S,
             )
-        except (PineconeTimeoutError, PineconeConnectionError, ServiceError) as e:
+        except (
+            PineconeTimeoutError,
+            PineconeConnectionError,
+            ServiceError,
+            RateLimitError,
+        ) as e:
             raise QueryError(f"Pinecone unavailable: {type(e).__name__}: {e}") from e
         hits = []
         for m in res.matches:

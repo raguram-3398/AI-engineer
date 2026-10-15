@@ -310,6 +310,73 @@ def run_sample(
     return checked
 
 
+def ragas_llm(api_key: str | None = None):
+    """Haiku as the RAGAS judge, through LangChain (`bypass_temperature`: Haiku
+    5.5 rejects the parameter). `api_key` None = ANTHROPIC_API_KEY from the
+    environment (the eval); the app always passes the visitor's key."""
+    from langchain_anthropic import ChatAnthropic
+    from ragas.llms import LangchainLLMWrapper
+
+    return LangchainLLMWrapper(
+        ChatAnthropic(
+            model=CLAUDE_MODEL,
+            max_tokens=RAGAS_MAX_TOKENS,
+            timeout=CLAUDE_TIMEOUT_S,
+            api_key=api_key,
+        ),
+        bypass_temperature=True,
+    )
+
+
+def ragas_embeddings():
+    """BGE for answer relevancy (local, CPU). Loads the model: build once."""
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+
+    return LangchainEmbeddingsWrapper(
+        HuggingFaceEmbeddings(
+            model_name=EMBED_MODEL,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+    )
+
+
+def ragas_run(
+    rows: list[Result], metrics: list, llm, emb
+) -> tuple[pd.DataFrame, float]:
+    """Score `rows` with the RAGAS `metrics`; (per-row scores, dollar cost).
+    The contexts are each row's hits; a score RAGAS could not compute is NaN."""
+    from ragas import EvaluationDataset, RunConfig, evaluate
+    from ragas.cost import get_token_usage_for_anthropic
+
+    data = EvaluationDataset.from_list(
+        [
+            {
+                "user_input": r.question,
+                "response": r.answer.text,
+                "retrieved_contexts": [h.chunk.text for h in r.hits],
+                "reference": r.reference,
+            }
+            for r in rows
+        ]
+    )
+    out = evaluate(
+        data,
+        metrics=metrics,
+        llm=llm,
+        embeddings=emb,
+        run_config=RunConfig(max_workers=EVAL_WORKERS),
+        token_usage_parser=get_token_usage_for_anthropic,
+        show_progress=False,
+    )
+    cost = out.total_cost(
+        cost_per_input_token=PRICE_IN_PER_MTOK / 1e6,
+        cost_per_output_token=PRICE_OUT_PER_MTOK / 1e6,
+    )
+    return out.to_pandas(), float(cost)
+
+
 def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
     """RAGAS scores per answerable result, plus the RAGAS dollar cost.
 
@@ -320,16 +387,9 @@ def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
     faithfulness on average (up to 1.0) on Day 29. Abstains are NaN in those two
     columns by design and are counted by `abstain_scores` instead.
 
-    Judge = Haiku through LangChain (`bypass_temperature`: Haiku 5.5 rejects the
-    parameter); embeddings = BGE, for answer relevancy only. A score RAGAS could
-    not compute is also NaN; the caller reports those separately.
+    Judge = `ragas_llm()`; embeddings = BGE, for answer relevancy only. A score
+    RAGAS could not compute is also NaN; the caller reports those separately.
     """
-    from langchain_anthropic import ChatAnthropic
-    from langchain_huggingface import HuggingFaceEmbeddings
-    from ragas import EvaluationDataset, RunConfig, evaluate
-    from ragas.cost import get_token_usage_for_anthropic
-    from ragas.embeddings import LangchainEmbeddingsWrapper
-    from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import (
         LLMContextPrecisionWithReference,
         LLMContextRecall,
@@ -337,54 +397,14 @@ def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
         faithfulness,
     )
 
-    llm = LangchainLLMWrapper(
-        ChatAnthropic(
-            model=CLAUDE_MODEL, max_tokens=RAGAS_MAX_TOKENS, timeout=CLAUDE_TIMEOUT_S
-        ),
-        bypass_temperature=True,
-    )
-    emb = LangchainEmbeddingsWrapper(
-        HuggingFaceEmbeddings(
-            model_name=EMBED_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
-    )
-
-    def score(rows: list[Result], metrics: list) -> tuple[pd.DataFrame, float]:
-        data = EvaluationDataset.from_list(
-            [
-                {
-                    "user_input": r.question,
-                    "response": r.answer.text,
-                    "retrieved_contexts": [h.chunk.text for h in r.hits],
-                    "reference": r.reference,
-                }
-                for r in rows
-            ]
-        )
-        out = evaluate(
-            data,
-            metrics=metrics,
-            llm=llm,
-            embeddings=emb,
-            run_config=RunConfig(max_workers=EVAL_WORKERS),
-            token_usage_parser=get_token_usage_for_anthropic,
-            show_progress=False,
-        )
-        cost = out.total_cost(
-            cost_per_input_token=PRICE_IN_PER_MTOK / 1e6,
-            cost_per_output_token=PRICE_OUT_PER_MTOK / 1e6,
-        )
-        return out.to_pandas(), float(cost)
-
+    llm, emb = ragas_llm(), ragas_embeddings()
     answerable = [r for r in results if r.reference is not None]
     scored = [i for i, r in enumerate(answerable) if answered(r.answer)]
-    ctx, ctx_cost = score(
-        answerable, [LLMContextPrecisionWithReference(), LLMContextRecall()]
+    ctx, ctx_cost = ragas_run(
+        answerable, [LLMContextPrecisionWithReference(), LLMContextRecall()], llm, emb
     )
-    ans, ans_cost = score(
-        [answerable[i] for i in scored], [faithfulness, answer_relevancy]
+    ans, ans_cost = ragas_run(
+        [answerable[i] for i in scored], [faithfulness, answer_relevancy], llm, emb
     )
     df = pd.DataFrame(
         {
@@ -397,6 +417,23 @@ def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
     df.loc[scored, "faithfulness"] = ans["faithfulness"].to_numpy()
     df.loc[scored, "answer_relevancy"] = ans["answer_relevancy"].to_numpy()
     return df, ctx_cost + ans_cost
+
+
+def live_scores(
+    question: str, ans: Answer, hits: list[Hit], api_key: str, emb
+) -> tuple[float, float, float]:
+    """RAGAS faithfulness and answer relevancy of one answered question (Day 35
+    app), judged by Haiku on `api_key`; (faithfulness, answer_relevancy,
+    cost_usd). No reference exists for a visitor's question, so the
+    reference-based metrics are not computed. NaN = RAGAS could not score it.
+    """
+    from ragas.metrics import answer_relevancy, faithfulness
+
+    row = Result("live", question, None, hits, ans)
+    df, cost = ragas_run(
+        [row], [faithfulness, answer_relevancy], ragas_llm(api_key), emb
+    )
+    return float(df.faithfulness[0]), float(df.answer_relevancy[0]), cost
 
 
 JUDGE_CRITERIA = ("faithfulness", "relevance", "completeness")

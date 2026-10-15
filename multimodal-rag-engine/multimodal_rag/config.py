@@ -129,3 +129,18 @@ GATE_THRESHOLDS: dict[str, float] = {
     "abstain_unanswerable": 0.0,
     "answer_answerable": 2 / 60,
 }
+
+# App (Day 35): one Streamlit page; visitors bring their own Anthropic key.
+# Questions per browser session (resets on page reload). Visitors pay for
+# Claude; this limits Pinecone free-tier requests and the 2 shared vCPUs.
+SESSION_QUERY_CAP: int = 20
+# Non-sample queries 243, 255, 254, 197 (answerable) and dev trap dm01 (abstains)
+EXAMPLE_QUESTIONS: tuple[str, ...] = (
+    "What kind of consumer research is the FDA conducting for naloxone’s OTC "
+    "transition?",
+    "ANDAs received by FDA in FY12",
+    "List which organizations collaborated with CDER on data harmonization for RWE.",
+    "Explain how did the FDA's refuse to receive percentage in FY 16 compare to "
+    "FY 15.",
+    "What percentage of ANDAs were refused to receive (RTR) in FY2020?",
+)
