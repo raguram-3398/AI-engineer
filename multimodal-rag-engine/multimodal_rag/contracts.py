@@ -84,6 +84,10 @@ class Answer:
     ABSTAIN_TEXT and cited nothing). `refused` = Claude
     stopped with `refusal`: `text` is REFUSAL_TEXT, no citations, not an abstain.
     `cost_usd` is 0 when Claude was not called.
+    `confidence` = Haiku's 1-10 self-check score of this answer; None when not
+    checked (SELF_CHECK off, abstain, refusal). `retried` = the first answer
+    scored below SELF_CHECK_MIN, so this is the answer after one more search
+    (Day 34).
     """
 
     text: str
@@ -92,3 +96,5 @@ class Answer:
     refused: bool
     cost_usd: float
     latency_s: float
+    confidence: int | None = None
+    retried: bool = False

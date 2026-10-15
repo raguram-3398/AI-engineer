@@ -1,15 +1,21 @@
 """Query-path edge cases: abstain without Claude, citation verification, the
 0-indexed page, early stop, Pinecone down, query transforms, BM25 + RRF,
-reranking, citation metadata, a query with no keyword match. No network calls."""
+reranking, citation metadata, a query with no keyword match, the self-check
+retry. No network calls."""
 
 from types import SimpleNamespace as NS
 
 import pytest
 from pinecone.errors import PineconeTimeoutError
 
-from multimodal_rag.answer import answer, build_documents, verify_citations
+from multimodal_rag.answer import (
+    answer,
+    build_documents,
+    check_and_retry,
+    verify_citations,
+)
 from multimodal_rag.config import ABSTAIN_TEXT, QUERY_PREFIX, REFUSAL_TEXT
-from multimodal_rag.contracts import Chunk, Hit
+from multimodal_rag.contracts import Answer, Chunk, Hit
 from multimodal_rag.retrieve import QueryError, Retriever, rrf, search_query, tokenize
 
 TEXT = "FDA approved 50 novel drugs in 2021. Most were small molecules."
@@ -339,3 +345,108 @@ def test_query_with_no_keyword_match_still_returns_ranked_hits() -> None:
     assert r.bm25_search("???") == []
     assert [h.chunk.chunk_id for h in hits] == ["deck-4-0"]
     assert ce.pairs == [("???", TEXT)]
+
+
+# ------------------------------------------------------------ self-check (Day 34)
+
+CALL_COST = (1000 * 0.10 + 100 * 0.50) / 1e6  # every fake call's usage
+
+
+class SeqClient:
+    """Returns canned Messages API responses in order; records the calls."""
+
+    def __init__(self, *responses: NS) -> None:
+        self.responses = list(responses)
+        self.messages = self
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs) -> NS:
+        assert "temperature" not in kwargs
+        self.calls.append(kwargs)
+        return self.responses.pop(0)
+
+
+def _resp(content: list, stop_reason: str = "end_turn") -> NS:
+    return NS(
+        content=content,
+        stop_reason=stop_reason,
+        usage=NS(input_tokens=1000, output_tokens=100),
+    )
+
+
+def _check(score: int, gap: str = "") -> NS:
+    return _resp([NS(type="tool_use", input={"score": score, "gap": gap})], "tool_use")
+
+
+def _cited_answer() -> NS:
+    return _resp([NS(type="text", text="50.", citations=[_cite(0, 36, TEXT[:36])])])
+
+
+class FakeSearch:
+    """Retriever stand-in: records searches, returns one hit."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+
+    def search(self, text: str, question: str | None = None, **kwargs) -> list[Hit]:
+        self.calls.append((text, question))
+        return [_hit(page=9)]
+
+
+FIRST = Answer("50 drugs.", [], False, False, 0.001, 1.0)
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        Answer(ABSTAIN_TEXT, [], True, False, 0.001, 1.0),
+        Answer(REFUSAL_TEXT, [], False, True, 0.001, 1.0),
+    ],
+)
+def test_abstain_or_refusal_is_final_and_not_checked(first: Answer) -> None:
+    final, _ = check_and_retry("q", first, [_hit()], FakeSearch(), NoCallClient())
+    assert final == first
+
+
+def test_score_at_threshold_keeps_the_first_answer_without_a_search() -> None:
+    search = FakeSearch()
+    final, hits = check_and_retry("q", FIRST, [_hit()], search, SeqClient(_check(6)))
+    assert (final.text, final.confidence, final.retried) == ("50 drugs.", 6, False)
+    assert final.cost_usd == pytest.approx(0.001 + CALL_COST)
+    assert search.calls == [] and hits == [_hit()]
+
+
+def test_low_score_searches_once_with_the_gap_and_answers_the_question() -> None:
+    """The gap only changes the search: the cross-encoder and Claude get the
+    user's question. The second answer is final; its check only fills
+    `confidence`, even when it is low again."""
+    client = SeqClient(
+        _check(3, "FY16 refusal rate"),
+        _resp(
+            [NS(type="tool_use", input={"query": "ANDA refusal rate FY16"})], "tool_use"
+        ),
+        _cited_answer(),
+        _check(2, "still missing"),
+    )
+    search = FakeSearch()
+    final, hits = check_and_retry("How many?", FIRST, [_hit()], search, client)
+    assert search.calls == [("ANDA refusal rate FY16", "How many?")]
+    assert (
+        "<missing>FY16 refusal rate</missing>"
+        in client.calls[1]["messages"][0]["content"]
+    )
+    assert client.calls[2]["messages"][0]["content"][-1]["text"] == "How many?"
+    assert final.retried and final.confidence == 2 and not final.abstained
+    assert hits == [_hit(page=9)] and len(client.calls) == 4
+    assert final.cost_usd == pytest.approx(0.001 + 4 * CALL_COST)
+
+
+def test_retry_that_abstains_is_final_and_not_checked_again() -> None:
+    client = SeqClient(
+        _check(2, "missing"),
+        _resp([NS(type="tool_use", input={"query": "q2"})], "tool_use"),
+        _resp([NS(type="text", text=ABSTAIN_TEXT, citations=None)]),
+    )
+    final, _ = check_and_retry("q", FIRST, [_hit()], FakeSearch(), client)
+    assert final.abstained and final.retried and final.confidence is None
+    assert len(client.calls) == 3

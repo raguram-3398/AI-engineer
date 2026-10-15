@@ -90,6 +90,13 @@ PRICE_OUT_PER_MTOK: float = 0.50
 ABSTAIN_TEXT: str = "The documents do not contain the answer."
 REFUSAL_TEXT: str = "The model declined to answer this question."
 
+# Self-check (Day 34): Haiku scores each answer 1-10; below SELF_CHECK_MIN, one
+# more search with a query rewritten from the stated gap, then the final answer.
+# SELF_CHECK=1 turns it on.
+SELF_CHECK: bool = os.environ.get("SELF_CHECK") == "1"
+SELF_CHECK_MIN: int = 6  # from the plan; not tuned
+CHECK_MAX_TOKENS: int = 1024  # forced tool call, no thinking; a score + a sentence
+
 # Vision descriptions (Day 30)
 VISION_PATH: Path = DATA_DIR / "vision.jsonl"  # one description per low-text slide
 VISION_MAX_CHARS: int = 300  # slide pages with less chunk text get a description

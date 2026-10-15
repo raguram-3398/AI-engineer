@@ -89,6 +89,16 @@ HYDE_PROMPT = (
     "or report, that answers the question below. Write it as document text, not "
     "as a reply to a person. Reply with the passage only."
 )
+GAP_PROMPT = (
+    "A search over FDA presentations and books did not find everything needed to "
+    "answer a question. Write one new search query that targets the missing "
+    "information.\n"
+    "Rules:\n"
+    "- Keep the question's names, acronyms, numbers and years exactly as written.\n"
+    "- Use the words of the missing information as described; add no facts or "
+    "numbers of your own and never answer the question.\n"
+    "Record the query with the record_query tool."
+)
 
 
 def _generate(
@@ -132,6 +142,20 @@ def rewrite(
     return _generate(
         REWRITE_PROMPT,
         f"{earlier}<question>{question}</question>",
+        REWRITE_MAX_TOKENS,
+        client,
+        REWRITE_TOOL,
+    )
+
+
+def gap_query(
+    question: str, gap: str, client: anthropic.Anthropic
+) -> tuple[str, float]:
+    """Search query for what the self-check said the answer is missing (Day 34);
+    (query, cost_usd). Only searched: Claude still answers `question`."""
+    return _generate(
+        GAP_PROMPT,
+        f"<question>{question}</question>\n<missing>{gap}</missing>",
         REWRITE_MAX_TOKENS,
         client,
         REWRITE_TOOL,
