@@ -394,7 +394,7 @@ Findings:
 
 ## Self-check loop (Day 34)
 
-Run: `SELF_CHECK=1 python -m multimodal_rag.evaluate full "label"`; one question: `SELF_CHECK=1 python -m multimodal_rag.answer "…"`. Off by default.
+Run: `SELF_CHECK=1 python -m multimodal_rag.evaluate full "label"`; one question: `SELF_CHECK=1 python -m multimodal_rag.answer "…"`. **Off by default** (Ram, 2026-10-14): the Mac final eval passed the gate, but retried answers lost faithfulness in both runs (below).
 
 With `SELF_CHECK=1`, every answered question gets one more Haiku call (`self_check`, a forced `record_check` tool call, no thinking): it sees the question, the answer and the 10 chunks the answer was written from, and returns a score 1–10 and one sentence on what is missing or unsupported (the gap). The score becomes `Answer.confidence`. An abstain or a refusal is final and never checked, so a correctly abstained unanswerable question costs nothing extra.
 
@@ -410,36 +410,40 @@ Below `SELF_CHECK_MIN = 6` (from the plan, not tuned): `gap_query` turns the que
 
 The check catches gross errors. Subtle ones (a single wrong number in a long answer) were not tested. It mostly fires on how the answer used the chunks, which a second search cannot fix.
 
-### Day 34 results (sandbox, index v2, hybrid + rerank + version/year rule)
+### Day 34 results (index v2, hybrid + rerank + version/year rule)
 
-| Measure | new prompt + rerank (sandbox, Day 33) | run B (Mac, last passed) | **+ self-check (sandbox)** |
-|---|---|---|---|
-| recall@10 / NDCG@10 | 0.6350 / 0.6047 | 0.6350 / 0.6047 | **0.6350 / 0.6047** |
-| faithfulness | 0.9236 | 0.9026 | **0.9136** |
-| answer relevancy | 0.8106 | 0.8318 | **0.8381** |
-| context precision | 0.6011 | 0.6230 | **0.6304** |
-| context recall | 0.6709 | 0.6640 | **0.7008** |
-| judge faithfulness / relevance / completeness | 3.53 / 3.48 / 2.93 | 3.82 / 3.43 / 2.97 | **3.90 / 3.55 / 3.10** |
-| unanswerable abstained | 20/20 | 20/20 | **20/20** (none checked) |
-| answerable answered | 49/60 | 51/60 | **50/60** |
-| refused | 0 | 0 | **0** |
-| gate | PASS | PASS | **PASS vs run B** |
-| answers cost (80 questions, incl. checks and retries) | – | – | $0.115 (≈ $0.06–0.07 without) |
-| run cost | $0.545 | $0.565 | $0.696 (incl. $0.086 to score the retried queries' first answers) |
+| Measure | new prompt + rerank (sandbox, Day 33) | run B (Mac, last passed) | + self-check (sandbox) | **+ self-check (Mac, final eval)** |
+|---|---|---|---|---|
+| recall@10 / NDCG@10 | 0.6350 / 0.6047 | 0.6350 / 0.6047 | 0.6350 / 0.6047 | **0.6350 / 0.6047** |
+| faithfulness | 0.9236 | 0.9026 | 0.9136 | **0.9186** |
+| answer relevancy | 0.8106 | 0.8318 | 0.8381 | **0.8437** |
+| context precision | 0.6011 | 0.6230 | 0.6304 | **0.6354** |
+| context recall | 0.6709 | 0.6640 | 0.7008 | **0.7052** |
+| judge faithfulness / relevance / completeness | 3.53 / 3.48 / 2.93 | 3.82 / 3.43 / 2.97 | 3.90 / 3.55 / 3.10 | **3.72 / 3.48 / 3.00** |
+| unanswerable abstained | 20/20 | 20/20 | 20/20 (none checked) | **20/20 (none checked)** |
+| answerable answered | 49/60 | 51/60 | 50/60 | **50/60** |
+| refused | 0 | 0 | 0 | **0** |
+| gate | PASS | PASS | PASS vs run B | **PASS vs run B** |
+| answers cost (80 questions, incl. checks and retries) | – | – | $0.115 (≈ $0.06–0.07 without) | **$0.115** |
+| run cost | $0.545 | $0.565 | $0.696 (incl. $0.086 to score the retried queries' first answers) | **$0.704 (incl. $0.097)** |
 
-Self-check in that run: 50 answers checked, **9 retried** (24, 128, 187, 198, 260, 268, 305, 338, 2057), 0 unanswerable retried, 0 answers turned into abstains. Final confidence counts: 4:3, 5:2, **6:14**, 7:9, 8:11, 9:9, 10:2.
+Self-check, Mac run: 52 first answers checked, **10 retried** (24, 46, 128, 137, 152, 158, 187, 212, 268, 2057), 0 unanswerable retried, **2 answers turned into abstains** (137: first answer judge completeness 1; 212: wrong, no gold page retrieved), so answered 52 → 50 within the run. Final confidence counts: 5:3, 6:14, 7:9, 8:12, 9:9, 10:3.
 
-The 9 retried queries, first answer vs final answer (same run, paired):
+Self-check, sandbox run: 50 answers checked, **9 retried** (24, 128, 187, 198, 260, 268, 305, 338, 2057), 0 unanswerable retried, 0 answers turned into abstains. Final confidence counts: 4:3, 5:2, **6:14**, 7:9, 8:11, 9:9, 10:2.
 
-| Measure | first | final |
-|---|---|---|
-| RAGAS faithfulness | 0.889 | **0.833** |
-| answer relevancy | 0.832 | 0.813 |
-| context precision | 0.612 | 0.680 |
-| context recall | 0.667 | 0.778 |
-| judge faithfulness / relevance / completeness | 3.33 / 3.33 / 2.56 | 3.44 / 3.78 / 3.22 |
+Retried queries, first answer vs final answer (same run, paired):
 
-Per query: context recall changed on 1 of 9 (305: 0 → 1, judge completeness 1 → 4, the one clear rescue). On the other 8 the retry found the same gold pages (or none, 128), so the final answer is a second sample of Claude over similar evidence: judge scores up on 187, 268, 24 (relevance), RAGAS faithfulness down on 24 (0.88 → 0.69), 198 (1.00 → 0.83), 338 (0.89 → 0.73).
+| Measure | sandbox (9): first | sandbox: final | Mac (10): first | Mac: final |
+|---|---|---|---|---|
+| RAGAS faithfulness | 0.889 | **0.833** | 0.906 | **0.811** |
+| answer relevancy | 0.832 | 0.813 | 0.754 | 0.825 |
+| context precision | 0.612 | 0.680 | 0.549 | 0.661 |
+| context recall | 0.667 | 0.778 | 0.567 | 0.689 |
+| judge faithfulness / relevance / completeness | 3.33 / 3.33 / 2.56 | 3.44 / 3.78 / 3.22 | 3.30 / 2.80 / 2.30 | 3.50 / 3.10 / 2.40 |
+
+Mac per query: faithfulness fell on 7 of the 8 retries still answered (24, 46, 128, 158, 187, 268, 2057; up on 152); context recall up on 24 (0 → 1) and 158 (0.5 → 1), down on 46 and 152.
+
+Sandbox per query: context recall changed on 1 of 9 (305: 0 → 1, judge completeness 1 → 4, the one clear rescue). On the other 8 the retry found the same gold pages (or none, 128), so the final answer is a second sample of Claude over similar evidence: judge scores up on 187, 268, 24 (relevance), RAGAS faithfulness down on 24 (0.88 → 0.69), 198 (1.00 → 0.83), 338 (0.89 → 0.73).
 
 Latency (sandbox, 2 CPUs, `ask`, one question at a time): the check adds 1.4–2.4 s to every answered question (305: 4.3 → 6.7 s; 42: 4.9 → 6.3 s); a retry adds a gap query, a reranked search, an answer and a second check (24: 10.9 → 25.6 s).
 
@@ -459,12 +463,13 @@ Latency (sandbox, 2 CPUs, `ask`, one question at a time): the check adds 1.4–2
 | ua03 GDUFA III CMO fee (trap) | Abstained; never checked. |
 
 Findings:
-- The loop passes the gate in the sandbox, and the whole-run numbers rose slightly vs run B. But run-to-run noise on this sample is as large as those moves (Day 29: answered flips 2/60, answer relevancy spread 0.787–0.868), and only 9 of 60 answers were touched.
-- On the 9 retried, the reference-based judge improved and RAGAS faithfulness (the only metric that detected ungrounded answers on Day 29) fell. One clear retrieval rescue (305); the rest re-ask Claude over the same evidence.
+- The loop passes the gate on the Mac (and in the sandbox), and the whole-run numbers rose slightly vs run B. But run-to-run noise on this sample is as large as those moves (Day 29: answered flips 2/60, answer relevancy spread 0.787–0.868), and only 9 of 60 answers were touched.
+- On the retried queries, RAGAS faithfulness (the only metric that detected ungrounded answers on Day 29) fell in both runs (sandbox 0.889 → 0.833, Mac 0.906 → 0.811); the judge rose a little (Mac completeness 2.3 → 2.4). One clear retrieval rescue (305); the rest re-ask Claude over the same evidence.
 - The self-check measures "supported by the shown chunks". It gives 10 to a faithful answer from the wrong page (334) and cannot see a missing gold page. Its scores pile up at the threshold (14 of 50 at exactly 6), and the same answer can land on either side (305).
 - The loop cannot touch the 10 false abstains, the largest remaining failure, because an abstain is final.
 - Cost: about +$0.0006 per question on average. Latency: +1.4–2.4 s on every answered question, about +15 s on a retried one; on the HF Space's 2 vCPU, rerank time is included in that.
-- Day 34 spend so far: checks $0.07, sandbox full run $0.70, latency and single-question tests $0.011.
+- **Decision (Ram): `SELF_CHECK` off by default.** Code, tests, flag and numbers kept.
+- Day 34 spend ≈ $1.5: checks $0.07, sandbox full run $0.70, Mac full run $0.70, latency and single-question tests $0.011.
 
 ## Indexing
 
