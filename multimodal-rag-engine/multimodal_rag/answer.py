@@ -7,6 +7,7 @@ import logging
 import sys
 import time
 from collections.abc import Sequence
+from dataclasses import replace
 
 import anthropic
 from dotenv import load_dotenv
@@ -15,13 +16,22 @@ from multimodal_rag.config import (
     ABSTAIN_TEXT,
     ANSWER_K,
     ANSWER_MAX_TOKENS,
+    CHECK_MAX_TOKENS,
     CLAUDE_MODEL,
     CLAUDE_TIMEOUT_S,
     PROJECT_DIR,
     REFUSAL_TEXT,
+    SELF_CHECK,
+    SELF_CHECK_MIN,
 )
 from multimodal_rag.contracts import Answer, Chunk, Citation, Hit
-from multimodal_rag.retrieve import QueryError, Retriever, cost_usd, search_query
+from multimodal_rag.retrieve import (
+    QueryError,
+    Retriever,
+    cost_usd,
+    gap_query,
+    search_query,
+)
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +44,29 @@ SYSTEM_PROMPT = (
     "If the documents do not contain the answer, reply with exactly this sentence "
     f"and nothing else: {ABSTAIN_TEXT}"
 )
+CHECK_PROMPT = (
+    "You check an answer to a question about FDA documents. Using only the "
+    "documents shown, score from 1 to 10 how completely and correctly the answer "
+    "answers the question: 10 = fully answers it and every claim is supported by "
+    "the documents; 1 = does not answer it or contradicts the documents. "
+    "If the score is below 10, describe in one sentence the information that is "
+    "missing or unsupported; otherwise leave the gap empty. "
+    "Record your verdict with the record_check tool."
+)
+# Forced tool call: the score arrives as JSON (no parsing of prose) and a forced
+# tool_choice turns thinking off, as for the rewriter and the judge.
+CHECK_TOOL = {
+    "name": "record_check",
+    "description": "Record the 1-10 score and the missing information.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "score": {"type": "integer", "enum": list(range(1, 11))},
+            "gap": {"type": "string"},
+        },
+        "required": ["score", "gap"],
+    },
+}
 
 
 def doc_title(chunk: Chunk) -> str:
@@ -138,13 +171,108 @@ def answer(question: str, hits: list[Hit], client: anthropic.Anthropic) -> Answe
     return Answer(text, citations, abstained, False, cost, time.monotonic() - t0)
 
 
+def answered(a: Answer) -> bool:
+    """Claude answered from the documents: neither an abstain nor a refusal."""
+    return not (a.abstained or a.refused)
+
+
+def self_check(
+    question: str, ans: Answer, hits: list[Hit], client: anthropic.Anthropic
+) -> tuple[int, str, float]:
+    """Haiku scores `ans` 1-10 against the question and the ANSWER_K chunks it
+    was written from; (score, gap, cost_usd). `gap` = one sentence on what is
+    missing or unsupported ("" at 10). Raises QueryError on an API error or a
+    score outside 1-10."""
+    docs = "\n".join(
+        f'<document title="{doc_title(h.chunk)}">{h.chunk.text}</document>'
+        for h in hits[:ANSWER_K]
+    )
+    prompt = (
+        f"<documents>\n{docs}\n</documents>\n"
+        f"<question>{question}</question>\n<answer>{ans.text}</answer>"
+    )
+    try:
+        msg = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=CHECK_MAX_TOKENS,
+            system=CHECK_PROMPT,
+            tools=[CHECK_TOOL],
+            tool_choice={"type": "tool", "name": CHECK_TOOL["name"]},
+            messages=[{"role": "user", "content": prompt}],
+            timeout=CLAUDE_TIMEOUT_S,
+        )
+    except anthropic.APIError as e:
+        raise QueryError(f"self-check failed: {type(e).__name__}: {e}") from e
+    cost = cost_usd(msg.usage)
+    if msg.stop_reason != "tool_use":
+        raise QueryError(f"self-check stopped with {msg.stop_reason} (${cost:.6f})")
+    verdict = next(b.input for b in msg.content if b.type == "tool_use")
+    if verdict.get("score") not in range(1, 11):
+        raise QueryError(f"self-check returned an invalid score: {verdict}")
+    return verdict["score"], verdict.get("gap", ""), cost
+
+
+def check_and_retry(
+    question: str,
+    first: Answer,
+    hits: list[Hit],
+    retriever: Retriever,
+    client: anthropic.Anthropic,
+) -> tuple[Answer, list[Hit]]:
+    """Self-check `first`; below SELF_CHECK_MIN, search once more and answer again.
+
+    An abstain or a refusal is final and not checked. Otherwise the score becomes
+    `confidence`. Below SELF_CHECK_MIN: the gap becomes a new search query
+    (`gap_query`), searched with the normal pipeline and reranked against
+    `question`, and Claude answers `question` from the new hits. That second
+    answer is final, even an abstain; it is checked once more only to fill
+    `confidence` (`retried=True`). Returns the final answer, with the cost and
+    latency of every step, and the ANSWER_K hits it was written from.
+    """
+    if not answered(first):
+        return first, hits[:ANSWER_K]
+    t0 = time.monotonic()
+    score, gap, check_cost = self_check(question, first, hits, client)
+    if score >= SELF_CHECK_MIN:
+        return (
+            replace(
+                first,
+                cost_usd=first.cost_usd + check_cost,
+                latency_s=first.latency_s + time.monotonic() - t0,
+                confidence=score,
+            ),
+            hits[:ANSWER_K],
+        )
+    query, query_cost = gap_query(question, gap, client)
+    new_hits = retriever.search(query, question=question)
+    second = answer(question, new_hits, client)
+    cost = first.cost_usd + check_cost + query_cost + second.cost_usd
+    confidence = None
+    if answered(second):
+        confidence, _, second_check_cost = self_check(
+            question, second, new_hits, client
+        )
+        cost += second_check_cost
+    log.info("self-check %d < %d, retried with %r", score, SELF_CHECK_MIN, query)
+    final = replace(
+        second,
+        cost_usd=cost,
+        latency_s=first.latency_s + time.monotonic() - t0,
+        confidence=confidence,
+        retried=True,
+    )
+    return final, new_hits[:ANSWER_K]
+
+
 def ask(
     question: str,
     retriever: Retriever,
     client: anthropic.Anthropic,
     history: Sequence[str] = (),
+    self_check_on: bool = SELF_CHECK,
 ) -> Answer:
-    """Transform the question (follow-up rewrite, REWRITE, HYDE), retrieve, answer.
+    """Transform the question (follow-up rewrite, REWRITE, HYDE), retrieve, answer,
+    and with SELF_CHECK check the answer and retry once (`check_and_retry`).
 
     `history` = the conversation's earlier user questions, oldest first.
     `cost_usd` includes the rewrite / HyDE calls; `latency_s` covers all steps.
@@ -153,13 +281,12 @@ def ask(
     sq = search_query(question, client, history)
     hits = retriever.search(sq.text, passage=sq.passage, question=sq.question)
     result = answer(sq.question, hits, client)
-    return Answer(
-        result.text,
-        result.citations,
-        result.abstained,
-        result.refused,
-        result.cost_usd + sq.cost_usd,
-        time.monotonic() - t0,
+    if self_check_on:
+        result, _ = check_and_retry(sq.question, result, hits, retriever, client)
+    return replace(
+        result,
+        cost_usd=result.cost_usd + sq.cost_usd,
+        latency_s=time.monotonic() - t0,
     )
 
 
@@ -176,6 +303,7 @@ def main() -> None:
         print(f"- {where}{mark} {c.cited_text!r}")
     print(
         f"\nabstained={result.abstained} refused={result.refused} "
+        f"confidence={result.confidence} retried={result.retried} "
         f"cost=${result.cost_usd:.6f} "
         f"latency={result.latency_s:.2f}s"
     )

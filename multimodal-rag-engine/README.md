@@ -77,7 +77,7 @@ Frozen dataclasses passed between stages:
 | `SearchQuery` | `question` (what Claude answers), `text` (what BGE embeds), `passage: bool` (HyDE), `cost_usd` | retrieve → retrieve, answer, eval |
 | `Hit` | `chunk: Chunk`, `score` (cosine; RRF score under `RETRIEVAL=hybrid`; cross-encoder logit under `RERANK=1`) | retrieve → answer, eval |
 | `Citation` | `chunk_id`, `doc_id`, `page`, `cited_text`, `score`, `generated: bool` | answer → UI, eval |
-| `Answer` | `text`, `citations`, `abstained`, `cost_usd`, `latency_s`, `confidence` (added Day 34) | answer → UI, eval |
+| `Answer` | `text`, `citations`, `abstained`, `cost_usd`, `latency_s`, `confidence`, `retried` (both added Day 34) | answer → UI, eval |
 
 **Pinecone record:** id = `chunk_id`, 384-d vector, metadata = `doc_id`, `page`, `text`, `kind`, `embedding_model`. Index `fda-bge-small-en-v1-5-v1` (the version suffix goes up on re-index), namespace `fda`. Embedding model: `BAAI/bge-small-en-v1.5`.
 
@@ -391,6 +391,80 @@ Findings:
 - Faithfulness drifted 0.926 → 0.912 → 0.903 across the two passed runs (each within 0.05 of the run before, 0.023 below hybrid in total): the same compare-to-last-passed weakness noted for answer relevancy on Day 30.
 - What this does not show: that the rule generalizes. Its only measured effect is on ua03, a sample item (7 of 8 answered → 0 of 8); the 11 non-sample traps were already abstained without it.
 - Day 33 spend ≈ $2.9 (sandbox full runs $1.11, Mac full runs $1.67, checks and diagnosis $0.17).
+
+## Self-check loop (Day 34)
+
+Run: `SELF_CHECK=1 python -m multimodal_rag.evaluate full "label"`; one question: `SELF_CHECK=1 python -m multimodal_rag.answer "…"`. Off by default.
+
+With `SELF_CHECK=1`, every answered question gets one more Haiku call (`self_check`, a forced `record_check` tool call, no thinking): it sees the question, the answer and the 10 chunks the answer was written from, and returns a score 1–10 and one sentence on what is missing or unsupported (the gap). The score becomes `Answer.confidence`. An abstain or a refusal is final and never checked, so a correctly abstained unanswerable question costs nothing extra.
+
+Below `SELF_CHECK_MIN = 6` (from the plan, not tuned): `gap_query` turns the question + gap into a new search query (forced tool call, same rules as the rewriter: keep the question's terms, add no facts). It is searched with the normal pipeline (vector 20 + BM25 20 → RRF → rerank 20 against the user's question), Claude answers the user's question from the new top 10, and that answer is final, even an abstain. It is checked once more only to fill `confidence`; `Answer.retried = True`. At most one retry per question.
+
+### Checks before the eval (non-sample data only)
+
+| Check | Result | Cost |
+|---|---|---|
+| Can the check fail? 5 known-bad answers: 3 answers swapped to another question, 1 answer with its numbers altered, 1 dev trap (dm01, FY2020 RTR) answered with the FY2018 figure | all 5 scored **1**; the 3 real answers to the same questions (controls) scored 7, 8, 8 | $0.0065 |
+| Score distribution, 40 non-sample queries (answer + check, no retry) | 4 abstained; of 36 answered: 3:1, 4:2, 5:5, 6:6, 7:3, 8:9, 9:9, 10:1 → **8 of 36 (22%) below 6** | $0.059 |
+| Of those 8: was the gold page retrieved? | mean recall@10 0.79 for the 8 low-scored vs 0.70 for the 28 scored ≥ 6; 6 of 8 gaps describe misread or unsupported claims, not missing information | – |
+
+The check catches gross errors. Subtle ones (a single wrong number in a long answer) were not tested. It mostly fires on how the answer used the chunks, which a second search cannot fix.
+
+### Day 34 results (sandbox, index v2, hybrid + rerank + version/year rule)
+
+| Measure | new prompt + rerank (sandbox, Day 33) | run B (Mac, last passed) | **+ self-check (sandbox)** |
+|---|---|---|---|
+| recall@10 / NDCG@10 | 0.6350 / 0.6047 | 0.6350 / 0.6047 | **0.6350 / 0.6047** |
+| faithfulness | 0.9236 | 0.9026 | **0.9136** |
+| answer relevancy | 0.8106 | 0.8318 | **0.8381** |
+| context precision | 0.6011 | 0.6230 | **0.6304** |
+| context recall | 0.6709 | 0.6640 | **0.7008** |
+| judge faithfulness / relevance / completeness | 3.53 / 3.48 / 2.93 | 3.82 / 3.43 / 2.97 | **3.90 / 3.55 / 3.10** |
+| unanswerable abstained | 20/20 | 20/20 | **20/20** (none checked) |
+| answerable answered | 49/60 | 51/60 | **50/60** |
+| refused | 0 | 0 | **0** |
+| gate | PASS | PASS | **PASS vs run B** |
+| answers cost (80 questions, incl. checks and retries) | – | – | $0.115 (≈ $0.06–0.07 without) |
+| run cost | $0.545 | $0.565 | $0.696 (incl. $0.086 to score the retried queries' first answers) |
+
+Self-check in that run: 50 answers checked, **9 retried** (24, 128, 187, 198, 260, 268, 305, 338, 2057), 0 unanswerable retried, 0 answers turned into abstains. Final confidence counts: 4:3, 5:2, **6:14**, 7:9, 8:11, 9:9, 10:2.
+
+The 9 retried queries, first answer vs final answer (same run, paired):
+
+| Measure | first | final |
+|---|---|---|
+| RAGAS faithfulness | 0.889 | **0.833** |
+| answer relevancy | 0.832 | 0.813 |
+| context precision | 0.612 | 0.680 |
+| context recall | 0.667 | 0.778 |
+| judge faithfulness / relevance / completeness | 3.33 / 3.33 / 2.56 | 3.44 / 3.78 / 3.22 |
+
+Per query: context recall changed on 1 of 9 (305: 0 → 1, judge completeness 1 → 4, the one clear rescue). On the other 8 the retry found the same gold pages (or none, 128), so the final answer is a second sample of Claude over similar evidence: judge scores up on 187, 268, 24 (relevance), RAGAS faithfulness down on 24 (0.88 → 0.69), 198 (1.00 → 0.83), 338 (0.89 → 0.73).
+
+Latency (sandbox, 2 CPUs, `ask`, one question at a time): the check adds 1.4–2.4 s to every answered question (305: 4.3 → 6.7 s; 42: 4.9 → 6.3 s); a retry adds a gap query, a reranked search, an answer and a second check (24: 10.9 → 25.6 s).
+
+### Spot-check of 10 outputs (from the sandbox run)
+
+| Query | Result |
+|---|---|
+| 305 GDUFA II commitments, retried | **Retry worked.** First search missed the gold page; the gap query found the "submitted on or after October 1, 2017" slide. Judge completeness 1 → 4. On a rerun the first answer scored 6 and was not retried: the trigger is unstable at the threshold. |
+| 24 NDA/BLA approval trends 2010–2019, retried | Gold already retrieved both times. Final answer is a long hedged walk through a vision-description series; faithfulness 0.88 → 0.69. Retry did not help. |
+| 198 pain treatment alternatives, retried | Correct both times (FDA/NIH meeting series, summer 2017). Scored 4 for a minor unsupported aside; the retry kept a similar aside. Wasted call. |
+| 338 NMEs without priority review, retried | Final gives the reference's 13 (FY2019) but adds a self-computed 162 for 2008–2016; faithfulness 0.89 → 0.73. |
+| 334 basic model for pollution/extinction | **Confidence 10, wrong.** Answers "Prisoner's Dilemma" faithfully from a retrieved chunk; the gold page (Tragedy of the Commons) was not retrieved. The check judges support by the shown chunks, not correctness. |
+| 212 dissolving-pill formulations | Confidence 6 (not retried), wrong: gold not retrieved, answer pivots to abuse-deterrent product names. One point lower and it would have been retried. |
+| 42 outdated OTC monograph system | Correct, confidence 8, judge 5/5/5. |
+| 27 FDA initiatives 2009–2018 | False abstain, no gold page retrieved. Abstains are final, so the loop cannot recover it. |
+| 54 Mass Drug Administration, Mekong | False abstain with 2 of 3 gold pages retrieved (context recall 0.67). Also out of the loop's reach. |
+| ua03 GDUFA III CMO fee (trap) | Abstained; never checked. |
+
+Findings:
+- The loop passes the gate in the sandbox, and the whole-run numbers rose slightly vs run B. But run-to-run noise on this sample is as large as those moves (Day 29: answered flips 2/60, answer relevancy spread 0.787–0.868), and only 9 of 60 answers were touched.
+- On the 9 retried, the reference-based judge improved and RAGAS faithfulness (the only metric that detected ungrounded answers on Day 29) fell. One clear retrieval rescue (305); the rest re-ask Claude over the same evidence.
+- The self-check measures "supported by the shown chunks". It gives 10 to a faithful answer from the wrong page (334) and cannot see a missing gold page. Its scores pile up at the threshold (14 of 50 at exactly 6), and the same answer can land on either side (305).
+- The loop cannot touch the 10 false abstains, the largest remaining failure, because an abstain is final.
+- Cost: about +$0.0006 per question on average. Latency: +1.4–2.4 s on every answered question, about +15 s on a retried one; on the HF Space's 2 vCPU, rerank time is included in that.
+- Day 34 spend so far: checks $0.07, sandbox full run $0.70, latency and single-question tests $0.011.
 
 ## Indexing
 

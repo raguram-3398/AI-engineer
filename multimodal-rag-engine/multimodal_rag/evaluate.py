@@ -12,7 +12,9 @@ Ten two-turn conversations (Claude rewrites the follow-ups; retrieval metrics on
 
 Full eval (Claude): answers the fixed 60 + 20 sample, scores it with RAGAS, the
 Haiku judge and the abstain rule, gates it against the last passed run and
-appends it to data/scores.jsonl.
+appends it to data/scores.jsonl. With SELF_CHECK=1 (Day 34) each answer is
+self-checked and retried once below SELF_CHECK_MIN; the retried queries' first
+answers are scored too, for a paired before/after.
     python -m multimodal_rag.evaluate full "label"
 """
 
@@ -32,7 +34,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
-from multimodal_rag.answer import answer
+from multimodal_rag.answer import answer, answered, check_and_retry
 from multimodal_rag.config import (
     ANSWER_K,
     CLAUDE_MODEL,
@@ -59,6 +61,8 @@ from multimodal_rag.config import (
     SAMPLE_SEED,
     SAMPLE_SIZE,
     SCORES_PATH,
+    SELF_CHECK,
+    SELF_CHECK_MIN,
     UNANSWERABLE_PATH,
     VISION_CONTENT,
     VISUAL_CONTENT,
@@ -235,13 +239,16 @@ def conversation_scores(
 @dataclass(frozen=True)
 class Result:
     """One sample question run through the pipeline. `reference` is None for
-    the unanswerable queries; `hits` are the ANSWER_K chunks Claude saw."""
+    the unanswerable queries; `hits` are the ANSWER_K chunks Claude saw.
+    `first` = the same question before its self-check retry (Day 34), kept to
+    score the retry pairwise; None when there was no retry."""
 
     query_id: str
     question: str
     reference: str | None
     hits: list[Hit]
     answer: Answer
+    first: "Result | None" = None
 
 
 def run_sample(
@@ -249,12 +256,15 @@ def run_sample(
     sample: dict,
     retriever: Retriever,
     client: anthropic.Anthropic,
+    self_check_on: bool = SELF_CHECK,
 ) -> list[Result]:
     """Answer the 60 answerable then the 20 unanswerable sample queries.
 
     Each question goes through `search_query` (REWRITE / HYDE flags); its cost is
     added to the answer's. Search runs in order (one local embed + one Pinecone
-    call each); the Claude calls run EVAL_WORKERS at a time. Raises QueryError
+    call each); the Claude calls run EVAL_WORKERS at a time. With SELF_CHECK each
+    answer then goes through `check_and_retry`, one query at a time (a retry
+    searches, and the Retriever is not shared across threads). Raises QueryError
     like `answer`, naming the query.
     """
     by_id = queries.set_index("query_id")
@@ -281,15 +291,23 @@ def run_sample(
     ]
     with ThreadPoolExecutor(EVAL_WORKERS) as pool:
         answers = list(pool.map(answer_one, items, hits, sqs))
-    return [
+    results = [
         Result(qid, q, ref, h[:ANSWER_K], a)
         for (qid, q, ref), h, a in zip(items, hits, answers)
     ]
-
-
-def answered(a: Answer) -> bool:
-    """Claude answered from the documents: neither an abstain nor a refusal."""
-    return not (a.abstained or a.refused)
+    if not self_check_on:
+        return results
+    checked = []
+    for r, sq, h in zip(results, sqs, hits):
+        try:
+            final, final_hits = check_and_retry(
+                sq.question, r.answer, h, retriever, client
+            )
+        except QueryError as e:
+            raise QueryError(f"query {r.query_id}: {e}") from e
+        first = r if final.retried else None
+        checked.append(replace(r, hits=final_hits, answer=final, first=first))
+    return checked
 
 
 def ragas_scores(results: list[Result]) -> tuple[pd.DataFrame, float]:
@@ -467,6 +485,56 @@ def gate(
     ]
 
 
+def retry_scores(
+    results: list[Result], per_query: pd.DataFrame, client: anthropic.Anthropic
+) -> tuple[dict, float]:
+    """Self-check summary (Day 34) and the retried answerable queries scored
+    pairwise: their first answer and hits (RAGAS + judge, scored here) vs their
+    final ones (from `per_query`). Returns (summary, cost of the extra scoring).
+    """
+    retried = [r for r in results if r.answer.retried]
+    pairs = [r for r in retried if r.reference is not None]
+    conf = [r.answer.confidence for r in results if r.answer.confidence is not None]
+    summary = {
+        "min_score": SELF_CHECK_MIN,
+        "n_checked": sum(
+            answered(r.first.answer if r.first else r.answer) for r in results
+        ),
+        "n_retried": len(retried),
+        "retried_ids": [r.query_id for r in retried],
+        "n_retried_unanswerable": len(retried) - len(pairs),
+        "answered_to_abstained": [r.query_id for r in retried if r.answer.abstained],
+        "final_confidence_counts": {str(s): conf.count(s) for s in sorted(set(conf))},
+    }
+    if not pairs:
+        return summary, 0.0
+    firsts = [r.first for r in pairs]
+    ragas_df, ragas_cost = ragas_scores(firsts)
+    with ThreadPoolExecutor(EVAL_WORKERS) as pool:
+        judged = list(
+            pool.map(lambda r: judge(r.question, r.reference, r.answer, client), firsts)
+        )
+    before = pd.concat(
+        [ragas_df, pd.DataFrame([j for j, _ in judged]).add_prefix("judge_")], axis=1
+    )
+    after = per_query.set_index("query_id").loc[[r.query_id for r in pairs]]
+    cols = [*ragas_df.columns, *(f"judge_{c}" for c in JUDGE_CRITERIA)]
+    summary["pairs"] = {
+        c: {
+            "first": float(before[c].mean()),
+            "final": float(after[c].mean()),
+        }
+        for c in cols
+    }
+    summary["pairs_per_query"] = {
+        r.query_id: {
+            c: [float(before[c].iloc[i]), float(after.at[r.query_id, c])] for c in cols
+        }
+        for i, r in enumerate(pairs)
+    }
+    return summary, ragas_cost + sum(c for _, c in judged)
+
+
 def last_passed() -> dict | None:
     """The most recent logged run that passed the gate, or None if none yet."""
     if not SCORES_PATH.is_file():
@@ -516,6 +584,8 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
                     "abstained": [r.answer.abstained for r in answerable],
                     "refused": [r.answer.refused for r in answerable],
                     "top1": [r.hits[0].score for r in answerable],
+                    "confidence": [r.answer.confidence for r in answerable],
+                    "retried": [r.answer.retried for r in answerable],
                     "answer": [r.answer.text for r in answerable],
                 }
             ),
@@ -538,6 +608,9 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
         "ragas": ragas_cost,
         "judge": sum(c for _, c in judged),
     }
+    self_check = None
+    if SELF_CHECK:
+        self_check, cost["self_check_pairs"] = retry_scores(results, per_query, client)
     cost["total"] = sum(cost.values())
 
     accepted = last_passed()
@@ -551,6 +624,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
             "hyde": HYDE,
             "retrieval": RETRIEVAL,
             "rerank": RERANK,
+            "self_check": SELF_CHECK,
         },
         "metrics": metrics,
         "n_answered": sum(is_answered),
@@ -564,6 +638,7 @@ def run_full(label: str) -> tuple[dict, pd.DataFrame]:
             "context_recall": int(ragas_df.context_recall.isna().sum()),
         },
         "cost_usd": cost,
+        "self_check": self_check,
         "compared_to": accepted["ts"] if accepted else None,
         "failed": failed,
         "passed": not failed,
@@ -584,6 +659,16 @@ def print_run(record: dict) -> None:
     print(f"  refused (not gated): {record['n_refused']}")
     print("  NaN (RAGAS failed):", record["nan"])
     print("  cost $:", {k: round(v, 4) for k, v in record["cost_usd"].items()})
+    sc = record.get("self_check")
+    if sc:
+        print(
+            f"  self-check: {sc['n_retried']} of {sc['n_checked']} checked answers "
+            f"retried (unanswerable {sc['n_retried_unanswerable']}), answered -> "
+            f"abstained {sc['answered_to_abstained']}"
+        )
+        print("  final confidence counts:", sc["final_confidence_counts"])
+        for c, v in sc.get("pairs", {}).items():
+            print(f"    {c:22s} first {v['first']:.4f}  final {v['final']:.4f}")
     verdict = "PASS" if record["passed"] else f"FAIL {record['failed']}"
     print(f"  gate vs {record['compared_to']}: {verdict}")
     if base:
