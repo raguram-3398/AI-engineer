@@ -1,0 +1,19 @@
+[project]
+name = "text-analyzer"
+version = "0.1.0"
+description = "Text statistics report: words, sentences, top words, letter frequency"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest", "ruff", "black"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

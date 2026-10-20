@@ -1,169 +1,210 @@
-# AI Engineer — 8-Week Study Plan
+# From Python to Production AI: The Build Log
 
-**Machine:** MacBook Air M3 · macOS · zsh
-**Stack:** Python 3.12 · uv · ruff · black · pytest · Git · FastAPI · Pydantic · Anthropic SDK · OpenAI Whisper · Streamlit · Docker
-**Repo:** `git@github.com:raguram-3398/AI-engineer.git`
-**Log:** [`progress_log.md`](./progress_log.md)
+How I learned to build reliable AI software, one tested project at a time.
+
+Every folder here is a small, self-contained project with a plain-language README. They build on each other, from command-line tools to two AI products that are live online.
 
 ---
 
-## Status
+## Featured Projects
 
-| Phase | Weeks | Status |
+| Project | What it does | Headline numbers | Links |
+|---|---|---|---|
+| **Sales Call Intelligence** | Upload a sales call recording; get its objections, action items, sentiment and summary, streamed live. Private details are removed before the AI sees the call. | about $0.06 per call · 95% of code covered by tests · 27 of 27 personal details removed in the privacy test | [Code](https://github.com/raguram-3398/Sales-Intelligence) · [Live demo](https://huggingface.co/spaces/raguram3398/sales-intelligence) |
+| **Multimodal RAG Engine** | Ask questions about 52 FDA documents (2,313 pages, many of them charts); every answer cites the exact PDF and page, and it says so when the answer isn't there. | 92% of answer claims supported by the cited pages · 20 of 20 trick questions declined · about $0.001 per answer | [Code](https://github.com/raguram-3398/Multimodal-RAG-Engine) · [Live demo](https://huggingface.co/spaces/raguram3398/Multimodal-RAG-Engine) |
+
+---
+
+## Learning Path
+
+| Stage | What I built | Key skill |
 |---|---|---|
-| Phase 1 — Foundations | 1–2 | ✅ Complete |
-| Phase 2 — LLM Engineering + RAG | 3–5 | Week 3 ✅ shipped · 4–5 pending |
-| Phase 3 — Agentic Systems + Production | 6–8 | Pending |
+| [01 · Python Foundations](01-python-foundations/) | 6 command-line tools: calculator, guessing game, tip calculator, to-do list, word counter, text analyzer | Keeping the logic separate from the screen, so it can be tested |
+| [02 · Production Python](02-production-python/) | Log parser, file reader, weather API client, book class | Real files, outside services, clear errors and validated data |
+| [03 · LLM APIs](03-llm-apis/) | **Sales Call Intelligence** | Calling AI models safely: streaming, structured output, privacy, cost |
+| [04 · RAG Foundations](04-rag-foundations/) | 5 experiments: search from scratch, chunking, embeddings, Pinecone, citations | Measuring search quality instead of guessing |
+| [05 · Advanced RAG](05-advanced-rag/) | **Multimodal RAG Engine** | A full document Q&A system, gated by automatic quality tests |
+<!-- next stages are added here -->
 
-**P1 live demo:** [huggingface.co/spaces/raguram3398/sales-intelligence](https://huggingface.co/spaces/raguram3398/sales-intelligence)
+---
+
+## Software Engineering Concepts
+
+The practices behind every project, grouped by stage of the software lifecycle. Click a stage to open it.
+
+<details>
+<summary><b>Planning & Requirements</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Definition of done | A written checklist a project must pass before it's called finished | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Scoping and trade-offs | Every project says what was left out and why, so the gaps are decisions, not accidents | both projects, [04](04-rag-foundations/) |
+| Cost estimation | Estimate what a run will cost before running it, then report the real figure | [citation tracking](04-rag-foundations/citation-tracking/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Decision records | Each design choice is recorded with the measurement behind it, kept or turned off | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Design & Architecture</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Separation of concerns | The math and the user prompts live in different files, so the math can be tested on its own | every project in [01](01-python-foundations/) |
+| Pure functions and immutable data | Functions return new results instead of changing their inputs, so behavior is predictable | [to-do list](01-python-foundations/todo-cli/), [tip calculator](01-python-foundations/tip-calculator/) |
+| Layered architecture | Routes, data models, services and utilities each have their own layer | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Pipeline with typed contracts | Each stage hands the next a well-defined data type: page → passage → search hit → citation → answer | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Dependency boundaries | The live app never loads the heavy document-reading libraries it doesn't need | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Right tool for the data | A class when something has data and behavior, a dataclass for plain data, a function for a transformation | [book class](02-production-python/book-class/) |
+| Validation at the boundary | Data from outside is checked against an expected shape before it's used | [weather client](02-production-python/weather-client/), [book class](02-production-python/book-class/) |
+| Interfaces and dependency injection | Code depends on a small interface, so tests can plug in a fake instead of a real AI model | [chunking](04-rag-foundations/chunking-comparison/), [embeddings](04-rag-foundations/embedding-comparison/), [citations](04-rag-foundations/citation-tracking/) |
+| Central configuration | All settings and limits live in one place with clear names | [04](04-rag-foundations/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Feature flags | A behavior can be switched on or off with one setting, without changing code | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Create expensive resources once | AI models and API clients are loaded once and shared, not rebuilt for every request | [04](04-rag-foundations/), both projects |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Implementation</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Types and documented contracts | Every function states what it takes, what it returns and what can go wrong | every project |
+| Input validation | Bad input gets a clear retry prompt instead of a crash | every project in [01](01-python-foundations/) |
+| Typed errors | Each failure has its own named error, raised early and handled in one place | [file reader](02-production-python/file-reader/), [04](04-rag-foundations/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Timeouts and graceful degradation | No outside call can hang forever; if a service is down, the user gets a clear message | [weather client](02-production-python/weather-client/), both projects |
+| Retries | A failed or malformed AI response is retried with the error fed back | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Rate-limit handling | When the search service is busy, the app says "try again" instead of crashing | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Async and streaming | Results appear on screen as the AI writes them | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Structured logging | Every log line carries a request ID, so one request can be traced end to end | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Cost tracking | The cost of every AI call is measured and shown | both projects, [citation tracking](04-rag-foundations/citation-tracking/) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Security & Privacy</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Secrets out of the code | API keys live in a local file that is never committed; an example file shows which keys are needed | every repo |
+| Bring your own key | Visitors use their own API key, kept only for their browser session and never stored | both live demos |
+| Removing personal data | Names, emails, phone and card numbers are removed before the AI sees a call and before anything is logged | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Prompt-injection guard | User input is screened for common attempts to override the AI's instructions (a simple pattern check) | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Least access | Each container gets only the keys it actually needs | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Testing & Quality</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Automated unit tests | Each piece is checked by code, including the awkward cases: zero, empty, invalid, missing | every project |
+| Fakes and mocks | Tests run without internet or AI models by swapping in stand-ins | [04](04-rag-foundations/), [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Slow tests kept separate | Quick tests run all the time; tests that load real models run on request | [04](04-rag-foundations/) |
+| Regression tests | A bug that was found gets a test, so it can't come back unnoticed | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Code coverage | 95% of the code is exercised by tests | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Linting and formatting | One code style everywhere, checked automatically (ruff, black) | every project |
+| Continuous integration | Tests run automatically on every push | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Evaluating AI Systems</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Answer keys for search | Search is scored against a list of the right answers, not judged by eye | [chunking](04-rag-foundations/chunking-comparison/), [embeddings](04-rag-foundations/embedding-comparison/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Before-and-after measurement | Every change is tested with and without it, on the same questions | [citation tracking](04-rag-foundations/citation-tracking/), [chunking](04-rag-foundations/chunking-comparison/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| AI-graded and human-checked answers | Answers are scored by RAGAS and an AI judge, and a sample is read by a person | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Tests that can fail | A deliberately bad change was made to prove the quality test catches it | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Quality gate with a fixed baseline | A change is rejected if any score drops more than normal run-to-run variation | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Reproducibility | Each result records exactly which code and data produced it, and runs are compared on the same machine | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Held-out test set | The questions used to grade the system are never used to tune it | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Build & Deployment</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Reproducible environments | Exact dependency versions are locked, so the project installs the same way everywhere (uv, lockfile) | every repo |
+| Containers | The app is packaged with everything it needs and runs the same on any machine (Docker) | both projects |
+| Local orchestration | One command starts the app locally (docker compose) | both projects |
+| Cloud deployment | Both apps are live on Hugging Face Spaces, with keys stored as secrets | both projects |
+| Blast radius and rollback | Before deploying: what breaks if this fails, and exactly how to undo it, for code and for data | both projects |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+<details>
+<summary><b>Operations & Maintenance</b></summary>
+
+| Concept | In plain words | Where I used it |
+|---|---|---|
+| Data versioning | The search index is versioned and records which AI model built it, with a written rebuild procedure | [Pinecone vector store](04-rag-foundations/pinecone-vectorstore/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Safe refactoring | Code is restructured without changing behavior, and the results are checked to be identical | this repo, [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Version control | Small, clearly described commits; every change reviewed before it's committed | every repo |
+| Documentation for two audiences | READMEs a non-technical reader can follow, with the technical detail further down | every repo |
+| Known limitations | Each project states honestly what it can't do yet | both projects, [text analyzer](01-python-foundations/text-analyzer/) |
+<!-- next stages' concepts are added here -->
+
+</details>
+
+---
+
+## How Every Project Is Built
+
+- One code style, checked automatically (ruff + black)
+- Type hints and a docstring on every function
+- A time limit on every call to an outside service
+- Real measured numbers in every README, never vague claims
+- An honest list of what was not built, and why
+
+---
+
+## Tech Stack
+
+| Area | Tools |
+|---|---|
+| Language & tooling | Python 3.12, uv, pytest, ruff, black, Git, GitHub Actions |
+| AI models | Anthropic Claude (Sonnet, Haiku), OpenAI Whisper |
+| Search & embeddings | Sentence Transformers (MiniLM, BGE), cross-encoder reranking, FAISS, Pinecone, BM25, NumPy |
+| Documents | pypdf, unstructured, Tesseract OCR, LangChain text splitters |
+| Evaluation | RAGAS, LLM-as-judge, recall@k, NDCG |
+| Apps & APIs | FastAPI, Streamlit, Pydantic, requests |
+| Deployment | Docker, docker compose, Hugging Face Spaces |
 
 ---
 
 ## Repository Structure
 
 ```
-ai-engineer-plan/
-├── week-1/   ← 6 CLI tools (Days 0–7)
-├── week-2/   ← File I/O, APIs, OOP (Days 8–14)
-└── week-3/
-    └── p1-sales-intelligence/
-        ├── src/{api,services,models,utils}/
-        ├── tests/        ← 35 tests, 95% coverage
-        ├── streamlit_app.py
-        ├── Dockerfile · docker-compose.yml
-        └── .github/workflows/ci.yml
+AI-engineer/
+├── 01-python-foundations/    # 6 command-line tools
+├── 02-production-python/     # files, APIs, errors, data classes
+├── 03-llm-apis/              # → Sales Call Intelligence (own repo)
+├── 04-rag-foundations/       # 5 search and citation experiments
+└── 05-advanced-rag/          # → Multimodal RAG Engine (own repo)
+```
+<!-- next stages are added to this tree -->
+
+---
+
+## Running Any Project
+
+Each project folder is self-contained. With Python 3.12 and [uv](https://docs.astral.sh/uv/) installed:
+
+```bash
+cd 01-python-foundations/calculator   # or any project folder
+uv sync
+uv run pytest
 ```
 
-**Three-layer pattern, every project:** input layer validates → logic layer raises typed errors → output layer catches and responds. In Week 3 this became the FastAPI route shape directly.
-
----
-
-## Standing Rules
-
-1. Type hints + docstring on every function, or it's not finished
-2. `ruff check` → `black` → `pytest` before every commit
-3. Timeout on every external call, no exceptions
-4. Semantic commits only — `feat:` `fix:` `docs:` `refactor:` `test:` `chore:`
-5. Raise typed exceptions, never return error strings
-6. Clients (`AsyncAnthropic`, `AsyncOpenAI`) live at module level, never per-request
-7. Nothing past the PII wall ever sees unscrubbed transcript data
-
----
-
-## Week 1 — Python Foundations (Days 0–7)
-
-Six CLI tools: Calculator → Number Guessing Game → Tip Calculator → Todo CLI → Word Frequency Counter → Text Analyzer → Refactor pass.
-
-**Patterns that carried forward:**
-
-| Pattern | Maps to (Week 3+) |
-|---|---|
-| Raise `ValueError`, never return `float \| str` | `TimeoutError` / `AnalysisError` at every service boundary |
-| Immutable list transforms, original unchanged | PII scrubber returns new text, original kept for logging |
-| `tasks[:i] + tasks[i+1:]` slicing | `messages[-max:]` context trimming |
-| `.get(key, 0)` reflex | Safe access on Claude/Pinecone response dicts |
-| `while result != "correct"` (visible stop condition) | Retry loop with `max_attempts` at the top, not buried in `break` |
-| `pytest.raises(ValueError, match=...)` | Testing `AnalysisError` raised after exhausted retries |
-| Stateless functions, no module-level mutation | Stateless FastAPI services (safe under concurrent load) |
-
----
-
-## Week 2 — Production Python (Days 8–14)
-
-Log Parser → Robust File Reader → Weather API Client → Git/README pass → Refactor pass → Book Class (OOP) → Phase 2 orientation.
-
-**Patterns that carried forward:**
-
-| Pattern | Maps to (Week 3+) |
-|---|---|
-| `with open()`, `tmp_path`, `pathlib` everywhere | CI-safe 35-test suite |
-| Three-case error handling (missing → raise, empty → `[]`, bad → skip) | `TranscriptionResult \| None`, scrub-and-continue logic |
-| Custom exception hierarchy in `exceptions.py` | `AnalysisError(attempts, last_error)` — structured, not just a message |
-| `parse_weather()` separate from `get_weather()` | `extract_json()` separate from `call_claude()` |
-| Pydantic for external data | `SalesCallAnalysis` schema, `Literal` sentiment enum |
-| `timeout=10` rule (started Day 3) | `asyncio.wait_for` / `asyncio.timeout()` on Claude + Whisper |
-| Class var vs instance var race-condition lesson | `_daily_spend` module-level, documented restart-reset limit |
-| "What I did not build and why" | Three honest tradeoffs in every README, ready for interviews |
-
----
-
-## Week 3 — P1: Sales Call Intelligence (Days 15–21) ✅ Shipped
-
-**Pipeline:** Audio upload → Whisper transcription → confidence check → injection guard → PII scrub → context trim → Claude analysis (structured, retried) → cost tracking → Streamlit dashboard (streamed).
-
-| Day | Built |
-|---|---|
-| 15 | Architecture diagram, no code — caught a missing confidence-check node before writing any |
-| 16 | `AsyncAnthropic` wrapper, module-level `PROMPT_REGISTRY`, timeout via `asyncio.wait_for` |
-| 17 | Pydantic output schema, 3-attempt error-fed retry (exact validation error → correction prompt) |
-| 18 | FastAPI `/analyze` route, Whisper integration, async warmup exercises |
-| 19 | PII scrubber, injection guard, context-budget trimmer — wired in that exact order |
-| 20 | Token-streaming via `asyncio.Queue`, cost tracker, `__META__` sentinel, Streamlit UI |
-| 21 | Full code review *before* tests, 35-test suite at 95% coverage, Docker, CI, HF Spaces deploy |
-
-### Key patterns
-
-- **Error-fed retry** — correction prompt includes what was asked, what came back, the exact Pydantic error, and what to send instead
-- **`__META__` sentinel** — one HTTP connection carries both the live token stream and the final structured JSON, no second round-trip
-- **Producer/consumer streaming** — `asyncio.Queue` with a `None` sentinel pushed in `finally`, so the consumer always terminates cleanly
-- **Injection check before PII scrub, not after** — scrubbing first could mangle the exact phrase the injection guard needs to see
-- **Client-per-request anti-pattern** — hit on Day 16 (`AsyncAnthropic()` instantiated inside the function), self-corrected proactively by Day 18
-- **Code review before writing tests** — caught a wrong env var key (`ANTHROPIC_API_KEY` read where `OPENAI_API_KEY` was needed) and a dropped `response_format` param that mocked tests would have hidden
-
-### Recurring bug classes (none caught by ruff/black — semantic, not style)
-
-| Bug class | Example |
-|---|---|
-| Missing parens on instantiation | `client = AsyncAnthropic` (Days 16, 19) |
-| Wrong method/property access | `client.message.create`, `.suffix()` called as a method |
-| Typo'd field names, silently consistent | `is_low_confindence`, `wer_threshould` |
-| Regex that compiles but matches wrong | `{13.16}` instead of `{13,16}` |
-| Truthiness check on wrong object | `if not guard:` instead of `if not guard.is_safe:` |
-| Computed value never wired to its field | `check_confidence()` result never assigned to the dataclass |
-
-### Results
-
-| Metric | Value |
-|---|---|
-| Tests / coverage | 35 passing / 95% |
-| Avg latency | Whisper 17.5s · Claude 10.5s |
-| Avg cost/call | $0.056 |
-| PII scrubbed (test run) | 27 entities (12 email, 3 phone, 1 card, 11 amount) |
-| Deployment | [HF Spaces](https://huggingface.co/spaces/raguram3398/sales-intelligence) |
-
-### Documented, not fixed (the "100 users" list)
-
-- Client-per-request → connection pool exhaustion (self-corrected)
-- Unbuffered audio upload → up to 2.5GB in memory at the file-size limit
-- Sync transcript trimming blocks the async event loop on long calls
-- All streams stall together if Claude itself rate-limits — no request queue in front of it yet
-
-### What I did not build and why
-
-- Anthropic token-counting API → used a ~4 char/token estimate instead
-- Regex name scrubbing → built, tested, removed after false positives on product names
-- `jiwer` WER → used a heuristic (>30% repeated words) proxy instead
-- `/analyse/stream` has no injection/PII guard yet — known gap vs. the main pipeline
-
----
-
-## Six AI-Specific Failure Modes
-
-| Failure | Mitigation | Seen in P1? |
-|---|---|---|
-| Prompt injection | Length limits, never concat raw input into system prompt | Yes — guard exists; streaming endpoint still has a gap |
-| PII in the pipeline | Strip/mask before any Claude call or log | Yes — scrub wall; regex misses unstructured names (documented) |
-| Embedding drift | Re-index on model change, document which model | Not yet — no RAG until Week 4 |
-| Context poisoning | Validate LLM output between steps | Adjacent — error-fed retry validates against schema |
-| Silent hallucination | Human spot-check after every change | Not yet formalized |
-| Latency spikes | Timeout everywhere, degrade gracefully | Yes — timeouts in; graceful degradation under rate-limits still unsolved |
-
----
-
-## Pre-Commit Checklist
-
-- [ ] `ruff check src/` clean
-- [ ] `black src/` reformatted
-- [ ] `pytest` all green
-- [ ] Type hints + docstring on every function
-- [ ] Zero magic numbers
+Each project's README has its own run command. Projects that call an outside service (Anthropic, Pinecone) need the key in a `.env` file in that folder.

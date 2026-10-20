@@ -18,6 +18,7 @@ build/
 
 # Logs
 *.log
+!02-production-python/log-parser/logs/sample.log
 
 # Environment secrets
 .env
