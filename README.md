@@ -137,7 +137,7 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Reproducible environments | Exact dependency versions are locked, so the project installs the same way everywhere (uv, lockfile) | every repo |
 | Containers | The app is packaged with everything it needs and runs the same on any machine (Docker) | both projects |
 | Local orchestration | One command starts the app locally (docker compose) | both projects |
-| Cloud deployment | Both apps are live on Hugging Face Spaces, with keys stored as secrets | both projects | the RAG engine also runs on AWS (EC2 behind CloudFront, image pushed to ECR by GitHub Actions, logs and an alarm in CloudWatch) |
+| Cloud deployment | Both apps are live on Hugging Face Spaces with keys stored as secrets; the RAG engine also runs on AWS (EC2 behind CloudFront, image pushed to ECR by GitHub Actions, logs and an alarm in CloudWatch) | both projects |
 | Blast radius and rollback | Before deploying: what breaks if this fails, and exactly how to undo it, for code and for data | both projects |
 <!-- next stages' concepts are added here -->
 
