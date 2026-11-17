@@ -2,7 +2,7 @@
 
 How I learned to build reliable AI software, one tested project at a time.
 
-Every folder here is a small, self-contained project with a plain-language README. They build on each other, from command-line tools to two AI products that are live online.
+Every folder here is a small, self-contained project with a plain-language README. They build on each other, from command-line tools to three AI apps, two of them live online.
 
 ---
 
@@ -10,6 +10,7 @@ Every folder here is a small, self-contained project with a plain-language READM
 
 | Project | What it does | Headline numbers | Links |
 |---|---|---|---|
+| **Support Agent** | A customer support agent that answers order questions and issues refunds. Refunds over $100 wait for a person's approval, and a paused run survives a server restart. | 26 of 27 test tasks passed (3 trials each) · 4 of 4 attacks blocked · about $0.04 per full test run | [Code](https://github.com/raguram-3398/Support-Agent) |
 | **Sales Call Intelligence** | Upload a sales call recording; get its objections, action items, sentiment and summary, streamed live. Private details are removed before the AI sees the call. | about $0.06 per call · 95% of code covered by tests · 27 of 27 personal details removed in the privacy test | [Code](https://github.com/raguram-3398/Sales-Intelligence) · [Live demo](https://huggingface.co/spaces/raguram3398/sales-intelligence) |
 | **Multimodal RAG Engine** | Ask questions about 52 FDA documents (2,313 pages, many of them charts); every answer cites the exact PDF and page, and it says so when the answer isn't there. | 92% of answer claims supported by the cited pages · 20 of 20 trick questions declined · about $0.001 per answer | [Code](https://github.com/raguram-3398/Multimodal-RAG-Engine) · [Live demo](https://huggingface.co/spaces/raguram3398/Multimodal-RAG-Engine) |
 
@@ -24,6 +25,7 @@ Every folder here is a small, self-contained project with a plain-language READM
 | [03 · LLM APIs](03-llm-apis/) | **Sales Call Intelligence** | Calling AI models safely: streaming, structured output, privacy, cost |
 | [04 · RAG Foundations](04-rag-foundations/) | 5 experiments: search from scratch, chunking, embeddings, Pinecone, citations | Measuring search quality instead of guessing |
 | [05 · Advanced RAG](05-advanced-rag/) | **Multimodal RAG Engine** | A full document Q&A system, gated by automatic quality tests |
+| [06 · Agents](06-agents/) | **Support Agent** | An agent that takes real actions safely: a person approves risky ones, and tests check what it did |
 <!-- next stages are added here -->
 
 ---
@@ -38,9 +40,9 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Concept | In plain words | Where I used it |
 |---|---|---|
 | Definition of done | A written checklist a project must pass before it's called finished | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Scoping and trade-offs | Every project says what was left out and why, so the gaps are decisions, not accidents | both projects, [04](04-rag-foundations/) |
+| Scoping and trade-offs | Every project says what was left out and why, so the gaps are decisions, not accidents | all three projects, [04](04-rag-foundations/) |
 | Cost estimation | Estimate what a run will cost before running it, then report the real figure | [citation tracking](04-rag-foundations/citation-tracking/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Decision records | Each design choice is recorded with the measurement behind it, kept or turned off | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Decision records | Each design choice is recorded with the measurement behind it, kept or turned off | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine), [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -60,7 +62,11 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Interfaces and dependency injection | Code depends on a small interface, so tests can plug in a fake instead of a real AI model | [chunking](04-rag-foundations/chunking-comparison/), [embeddings](04-rag-foundations/embedding-comparison/), [citations](04-rag-foundations/citation-tracking/) |
 | Central configuration | All settings and limits live in one place with clear names | [04](04-rag-foundations/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | Feature flags | A behavior can be switched on or off with one setting, without changing code | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Create expensive resources once | AI models and API clients are loaded once and shared, not rebuilt for every request | [04](04-rag-foundations/), both projects |
+| Create expensive resources once | AI models and API clients are loaded once and shared, not rebuilt for every request | [04](04-rag-foundations/), both live apps |
+| Bounded agent loop | The agent's steps are a graph I wrote by hand, with a cap on the number of steps and a time limit on each | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Human in the loop | A risky action pauses until a person approves it | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Durable state | A paused run is saved in the database, so it resumes after a server restart | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Tools as a separate service | The agent reaches its tools through a standard protocol (MCP) instead of calling them directly | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -73,12 +79,13 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Types and documented contracts | Every function states what it takes, what it returns and what can go wrong | every project |
 | Input validation | Bad input gets a clear retry prompt instead of a crash | every project in [01](01-python-foundations/) |
 | Typed errors | Each failure has its own named error, raised early and handled in one place | [file reader](02-production-python/file-reader/), [04](04-rag-foundations/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Timeouts and graceful degradation | No outside call can hang forever; if a service is down, the user gets a clear message | [weather client](02-production-python/weather-client/), both projects |
+| Timeouts and graceful degradation | No outside call can hang forever; if a service is down, the user gets a clear message | [weather client](02-production-python/weather-client/), all three projects |
 | Retries | A failed or malformed AI response is retried with the error fed back | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
 | Rate-limit handling | When the search service is busy, the app says "try again" instead of crashing | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Async and streaming | Results appear on screen as the AI writes them | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Async and streaming | Results appear on screen as the AI writes them | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence), [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Rate limiting | Each user can send only so many requests a minute | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence), [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 | Structured logging | Every log line carries a request ID, so one request can be traced end to end | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
-| Cost tracking | The cost of every AI call is measured and shown | both projects, [citation tracking](04-rag-foundations/citation-tracking/) |
+| Cost tracking | The cost of every AI call is measured and shown | both live apps, [citation tracking](04-rag-foundations/citation-tracking/) |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -92,7 +99,10 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Bring your own key | Visitors use their own API key, kept only for their browser session and never stored | both live demos |
 | Removing personal data | Names, emails, phone and card numbers are removed before the AI sees a call and before anything is logged | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
 | Prompt-injection guard | User input is screened for common attempts to override the AI's instructions (a simple pattern check) | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
-| Least access | Each container gets only the keys it actually needs | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Least access | Each container gets only the keys it actually needs, and each tool gets a database role with only the rights it needs | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine), [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Sign-in with OAuth 2.0 | Users and the agent each get their own token from a sign-in server (Keycloak), and issuing a refund needs extra permission | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Identity from the token, not the AI | Which customer is asking comes only from their verified token, so the AI cannot read or refund someone else's order | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Attack tests | Planted instructions and requests to skip approval are part of the automatic tests | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -108,7 +118,7 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Regression tests | A bug that was found gets a test, so it can't come back unnoticed | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | Code coverage | 95% of the code is exercised by tests | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
 | Linting and formatting | One code style everywhere, checked automatically (ruff, black) | every project |
-| Continuous integration | Tests run automatically on every push | [Sales Call Intelligence](https://github.com/raguram-3398/Sales-Intelligence) |
+| Continuous integration | Tests run automatically on every push | all three projects |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -122,7 +132,9 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Before-and-after measurement | Every change is tested with and without it, on the same questions | [citation tracking](04-rag-foundations/citation-tracking/), [chunking](04-rag-foundations/chunking-comparison/), [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | AI-graded and human-checked answers | Answers are scored by RAGAS and an AI judge, and a sample is read by a person | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | Tests that can fail | A deliberately bad change was made to prove the quality test catches it | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
-| Quality gate with a fixed baseline | A change is rejected if any score drops more than normal run-to-run variation | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
+| Quality gate with a fixed baseline | A change is rejected if any score drops more than normal run-to-run variation | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine), [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Testing what an agent did | Each task checks the database afterwards, which tools were called, and the reply | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
+| Repeated trials | Each task runs 3 times and must pass at least 2, because the AI doesn't answer the same way every time | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 | Reproducibility | Each result records exactly which code and data produced it, and runs are compared on the same machine | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | Held-out test set | The questions used to grade the system are never used to tune it | [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 <!-- next stages' concepts are added here -->
@@ -135,10 +147,10 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Concept | In plain words | Where I used it |
 |---|---|---|
 | Reproducible environments | Exact dependency versions are locked, so the project installs the same way everywhere (uv, lockfile) | every repo |
-| Containers | The app is packaged with everything it needs and runs the same on any machine (Docker) | both projects |
-| Local orchestration | One command starts the app locally (docker compose) | both projects |
-| Cloud deployment | Both apps are live on Hugging Face Spaces with keys stored as secrets; the RAG engine also runs on AWS (EC2 behind CloudFront, image pushed to ECR by GitHub Actions, logs and an alarm in CloudWatch) | both projects |
-| Blast radius and rollback | Before deploying: what breaks if this fails, and exactly how to undo it, for code and for data | both projects |
+| Containers | The app is packaged with everything it needs and runs the same on any machine (Docker) | all three projects |
+| Local orchestration | One command starts the app locally (docker compose) | all three projects |
+| Cloud deployment | Both apps are live on Hugging Face Spaces with keys stored as secrets; the RAG engine also runs on AWS (EC2 behind CloudFront, image pushed to ECR by GitHub Actions, logs and an alarm in CloudWatch) | both live apps |
+| Blast radius and rollback | Before deploying: what breaks if this fails, and exactly how to undo it, for code and for data | both live apps |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -152,7 +164,8 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 | Safe refactoring | Code is restructured without changing behavior, and the results are checked to be identical | this repo, [Multimodal RAG Engine](https://github.com/raguram-3398/Multimodal-RAG-Engine) |
 | Version control | Small, clearly described commits; every change reviewed before it's committed | every repo |
 | Documentation for two audiences | READMEs a non-technical reader can follow, with the technical detail further down | every repo |
-| Known limitations | Each project states honestly what it can't do yet | both projects, [text analyzer](01-python-foundations/text-analyzer/) |
+| Known limitations | Each project states honestly what it can't do yet | all three projects, [text analyzer](01-python-foundations/text-analyzer/) |
+| Tracing | Every agent step is recorded with its timing, so a bad run can be looked at step by step (Langfuse) | [Support Agent](https://github.com/raguram-3398/Support-Agent) |
 <!-- next stages' concepts are added here -->
 
 </details>
@@ -175,10 +188,12 @@ The practices behind every project, grouped by stage of the software lifecycle. 
 |---|---|
 | Language & tooling | Python 3.12, uv, pytest, ruff, black, Git, GitHub Actions |
 | AI models | Anthropic Claude (Sonnet, Haiku), OpenAI Whisper |
+| Agents | LangGraph, MCP, Langfuse |
 | Search & embeddings | Sentence Transformers (MiniLM, BGE), cross-encoder reranking, FAISS, Pinecone, BM25, NumPy |
 | Documents | pypdf, unstructured, Tesseract OCR, LangChain text splitters |
-| Evaluation | RAGAS, LLM-as-judge, recall@k, NDCG |
-| Apps & APIs | FastAPI, Streamlit, Pydantic, requests |
+| Evaluation | RAGAS, LLM-as-judge, recall@k, NDCG, agent task evals |
+| Apps & APIs | FastAPI, server-sent events, Streamlit, Pydantic, requests |
+| Data & security | PostgreSQL, SQLAlchemy, Redis, OAuth 2.0 (Keycloak), JWT |
 | Deployment | Docker, docker compose, Hugging Face Spaces |
 
 ---
@@ -191,7 +206,8 @@ AI-engineer/
 ├── 02-production-python/     # files, APIs, errors, data classes
 ├── 03-llm-apis/              # → Sales Call Intelligence (own repo)
 ├── 04-rag-foundations/       # 5 search and citation experiments
-└── 05-advanced-rag/          # → Multimodal RAG Engine (own repo)
+├── 05-advanced-rag/          # → Multimodal RAG Engine (own repo)
+└── 06-agents/                # → Support Agent (own repo)
 ```
 <!-- next stages are added to this tree -->
 
